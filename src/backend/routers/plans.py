@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Agent, Project, ProjectPlan, Task, User
-from services.path_service import normalize_expected_output_path
+from services.path_service import ExpectedOutputPathError, normalize_expected_output_path
 from auth import get_current_user
 from services.prompt_service import generate_plan_prompt
 
@@ -440,11 +440,18 @@ def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(
 
         depends_on = t.get("depends_on", [])
         collab = _normalize_collab_dir(project)
-        expected_output = normalize_expected_output_path(
-            t.get("expected_output"),
-            default_path=f"outputs/{task_code}/result.json",
-            collaboration_dir=collab,
-        )
+        try:
+            expected_output = normalize_expected_output_path(
+                t.get("expected_output"),
+                default_path=f"outputs/{task_code}/result.json",
+                collaboration_dir=collab,
+                strict=True,
+            )
+        except ExpectedOutputPathError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Task {task_code} has invalid expected_output: {exc}",
+            ) from exc
 
         task = Task(
             project_id=project_id,

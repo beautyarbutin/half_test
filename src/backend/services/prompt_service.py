@@ -147,10 +147,13 @@ def generate_task_prompt(
         ).all()
         paths = []
         for p in predecessors:
+            if p.status == "abandoned":
+                continue
             path = p.result_file_path or normalize_expected_output_path(
                 p.expected_output_path,
                 default_path=f"outputs/{p.task_code}/result.json",
                 collaboration_dir=collab,
+                strict=True,
             )
             paths.append(f"- {p.task_code}: {path}")
         if paths:
@@ -164,6 +167,7 @@ def generate_task_prompt(
         task.expected_output_path,
         default_path=f"outputs/{task.task_code}/result.json",
         collaboration_dir=collab,
+        strict=True,
     )
 
     prompt = f"""你是项目 [{project.name}] 的执行 Agent。

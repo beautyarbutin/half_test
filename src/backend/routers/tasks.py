@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Project, Task, TaskEvent, User
 from auth import get_current_user
-from services.path_service import normalize_expected_output_path
+from services.path_service import ExpectedOutputPathError, normalize_expected_output_path
 from services.prompt_service import generate_task_prompt
 from services import git_service
 
@@ -118,11 +118,15 @@ def update_task(
     collab = (project.collaboration_dir or "").strip("/") if project else ""
     task.task_name = task_name
     task.description = body.description
-    task.expected_output_path = normalize_expected_output_path(
-        body.expected_output_path,
-        default_path=f"outputs/{task.task_code}/result.json",
-        collaboration_dir=collab,
-    )
+    try:
+        task.expected_output_path = normalize_expected_output_path(
+            body.expected_output_path,
+            default_path=f"outputs/{task.task_code}/result.json",
+            collaboration_dir=collab,
+            strict=True,
+        )
+    except ExpectedOutputPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     task.updated_at = now
     db.add(TaskEvent(
         task_id=task.id,
@@ -182,11 +186,16 @@ def _compute_predecessor_status(db: Session, task: Task, refresh: bool) -> Prede
                 continue
             if p.status != "completed":
                 continue
-            path = p.result_file_path or normalize_expected_output_path(
-                p.expected_output_path,
-                default_path=f"outputs/{p.task_code}/result.json",
-                collaboration_dir=collab,
-            )
+            try:
+                path = p.result_file_path or normalize_expected_output_path(
+                    p.expected_output_path,
+                    default_path=f"outputs/{p.task_code}/result.json",
+                    collaboration_dir=collab,
+                    strict=True,
+                )
+            except ExpectedOutputPathError:
+                missing.append(MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path="(invalid expected_output_path)"))
+                continue
             exists = git_service.file_exists(project.id, path, git_repo_url=project.git_repo_url)
             if not exists:
                 missing.append(MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path=path))
@@ -256,11 +265,18 @@ def list_project_predecessor_status(project_id: int, refresh: bool = False, db: 
                 continue
             if p.status != "completed":
                 continue
-            path = p.result_file_path or normalize_expected_output_path(
-                p.expected_output_path,
-                default_path=f"outputs/{p.task_code}/result.json",
-                collaboration_dir=collab,
-            )
+            try:
+                path = p.result_file_path or normalize_expected_output_path(
+                    p.expected_output_path,
+                    default_path=f"outputs/{p.task_code}/result.json",
+                    collaboration_dir=collab,
+                    strict=True,
+                )
+            except ExpectedOutputPathError:
+                missing.append(
+                    MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path="(invalid expected_output_path)")
+                )
+                continue
             if not _file_exists_cached(path):
                 missing.append(
                     MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path=path)
@@ -286,7 +302,10 @@ def task_generate_prompt(task_id: int, body: PromptRequest = PromptRequest(), db
     project = db.query(Project).filter(Project.id == task.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    prompt = generate_task_prompt(db, project, task, include_usage=body.include_usage)
+    try:
+        prompt = generate_task_prompt(db, project, task, include_usage=body.include_usage)
+    except ExpectedOutputPathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return PromptResponse(prompt=prompt)
 
 

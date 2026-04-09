@@ -3,6 +3,8 @@ import os
 import subprocess
 import configparser
 import time
+import threading
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
@@ -12,6 +14,7 @@ from urllib.parse import urlparse
 # pre-checks then immediately dispatches" from doing two back-to-back git fetches.
 _ENSURE_REPO_TTL_SECONDS = 3.0
 _ensure_repo_last_run: dict[int, float] = {}
+_ensure_repo_locks: dict[int, threading.Lock] = {}
 
 import logging
 
@@ -27,6 +30,29 @@ _FORBIDDEN_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254
 _PRIVATE_HOST_PREFIXES = ("10.", "192.168.", "172.16.", "172.17.", "172.18.", "172.19.",
                           "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
                           "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.")
+_RETRYABLE_GIT_ERROR_MARKERS = (
+    "could not resolve host",
+    "connection timed out",
+    "operation timed out",
+    "network is unreachable",
+    "connection reset",
+    "connection refused",
+    "remote end hung up unexpectedly",
+    "tls handshake timeout",
+    "failed to connect",
+    "temporary failure in name resolution",
+)
+
+
+@dataclass(frozen=True)
+class RepoSyncStatus:
+    repo_dir: str | None
+    used_cache: bool = False
+    fetched: bool = False
+    pulled: bool = False
+    remote_ready: bool = False
+    warnings: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 def validate_git_url(url: str) -> str:
@@ -64,6 +90,14 @@ def _repo_dir(project_id: int) -> str:
     return os.path.join(settings.REPOS_DIR, str(project_id))
 
 
+def _project_lock(project_id: int) -> threading.Lock:
+    lock = _ensure_repo_locks.get(project_id)
+    if lock is None:
+        lock = threading.Lock()
+        _ensure_repo_locks[project_id] = lock
+    return lock
+
+
 def _safe_join(base: str, relative_path: str) -> str:
     """Join a relative path to base and reject any traversal outside base."""
     base_real = os.path.realpath(base)
@@ -88,17 +122,21 @@ def clone_repo(project_id: int, git_repo_url: str) -> str:
     return repo_dir
 
 
+def _run_git(repo_dir: str, args: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", repo_dir, *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def pull_repo(project_id: int) -> str:
     repo_dir = _repo_dir(project_id)
     if not os.path.exists(repo_dir):
         raise FileNotFoundError(f"Repo directory not found: {repo_dir}")
-    subprocess.run(
-        ["git", "-C", repo_dir, "pull", "--ff-only"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    _run_git(repo_dir, ["pull", "--ff-only"])
     return repo_dir
 
 
@@ -106,35 +144,125 @@ def fetch_repo(project_id: int) -> str:
     repo_dir = _repo_dir(project_id)
     if not os.path.exists(repo_dir):
         raise FileNotFoundError(f"Repo directory not found: {repo_dir}")
-    subprocess.run(
-        ["git", "-C", repo_dir, "fetch", "origin"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
+    _run_git(repo_dir, ["fetch", "--prune", "origin"])
     return repo_dir
+
+
+def _is_retryable_git_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return True
+    return any(marker in message for marker in _RETRYABLE_GIT_ERROR_MARKERS)
+
+
+def _retry_git_operation(label: str, fn, *, retries: int = 3) -> tuple[bool, str | None]:
+    last_error: str | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            fn()
+            return True, None
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt >= retries or not _is_retryable_git_error(exc):
+                return False, f"{label} failed: {last_error}"
+            delay = 0.5 * (2 ** (attempt - 1))
+            logger.warning("%s attempt %s/%s failed: %s; retrying in %.1fs", label, attempt, retries, exc, delay)
+            time.sleep(delay)
+    return False, f"{label} failed"
+
+
+def _is_shallow_repo(repo_dir: str) -> bool:
+    try:
+        result = _run_git(repo_dir, ["rev-parse", "--is-shallow-repository"], timeout=10)
+    except Exception:
+        return False
+    return result.stdout.strip().lower() == "true"
+
+
+def _unshallow_repo(project_id: int) -> tuple[bool, str | None]:
+    repo_dir = _repo_dir(project_id)
+    if not _is_shallow_repo(repo_dir):
+        return True, None
+    return _retry_git_operation(
+        "git fetch --unshallow",
+        lambda: _run_git(repo_dir, ["fetch", "--unshallow", "origin"]),
+    )
+
+
+def ensure_repo_sync(project_id: int, git_repo_url: str) -> RepoSyncStatus:
+    repo_dir = _repo_dir(project_id)
+    now = time.monotonic()
+    lock = _project_lock(project_id)
+    with lock:
+        last = _ensure_repo_last_run.get(project_id)
+        if last is not None and (now - last) < _ENSURE_REPO_TTL_SECONDS and os.path.exists(repo_dir):
+            return RepoSyncStatus(
+                repo_dir=repo_dir,
+                used_cache=True,
+                remote_ready=True,
+            )
+
+        warnings: list[str] = []
+        if os.path.exists(repo_dir):
+            fetched, fetch_error = _retry_git_operation(
+                "git fetch origin",
+                lambda: fetch_repo(project_id),
+            )
+            if fetched:
+                remote_ready = True
+                shallow_ok, shallow_error = _unshallow_repo(project_id)
+                if not shallow_ok and shallow_error:
+                    warnings.append(shallow_error)
+                pulled, pull_error = _retry_git_operation(
+                    "git pull --ff-only",
+                    lambda: pull_repo(project_id),
+                )
+                if pull_error:
+                    warnings.append(pull_error)
+                _ensure_repo_last_run[project_id] = time.monotonic()
+                return RepoSyncStatus(
+                    repo_dir=repo_dir,
+                    fetched=True,
+                    pulled=pulled,
+                    remote_ready=remote_ready,
+                    warnings=warnings,
+                )
+            return RepoSyncStatus(
+                repo_dir=repo_dir,
+                fetched=False,
+                pulled=False,
+                remote_ready=False,
+                warnings=warnings,
+                error=fetch_error,
+            )
+
+        cloned, clone_error = _retry_git_operation(
+            "git clone",
+            lambda: clone_repo(project_id, git_repo_url),
+        )
+        if not cloned:
+            return RepoSyncStatus(repo_dir=None, remote_ready=False, error=clone_error)
+
+        _ensure_repo_last_run[project_id] = time.monotonic()
+        shallow_ok, shallow_error = _unshallow_repo(project_id)
+        if not shallow_ok and shallow_error:
+            warnings.append(shallow_error)
+        return RepoSyncStatus(
+            repo_dir=repo_dir,
+            fetched=True,
+            pulled=True,
+            remote_ready=True,
+            warnings=warnings,
+        )
 
 
 def ensure_repo(project_id: int, git_repo_url: str) -> str:
-    repo_dir = _repo_dir(project_id)
-    now = time.monotonic()
-    last = _ensure_repo_last_run.get(project_id)
-    if last is not None and (now - last) < _ENSURE_REPO_TTL_SECONDS and os.path.exists(repo_dir):
-        return repo_dir
-    if os.path.exists(repo_dir):
-        try:
-            fetch_repo(project_id)
-        except Exception as e:
-            logger.warning("git fetch failed for project %s: %s", project_id, e)
-        try:
-            pull_repo(project_id)
-        except Exception as e:
-            logger.warning("git pull failed for project %s: %s", project_id, e)
-    else:
-        clone_repo(project_id, git_repo_url)
-    _ensure_repo_last_run[project_id] = time.monotonic()
-    return repo_dir
+    status = ensure_repo_sync(project_id, git_repo_url)
+    if status.error:
+        raise RuntimeError(status.error)
+    if not status.repo_dir:
+        raise RuntimeError(f"Repo sync did not produce a checkout for project {project_id}")
+    return status.repo_dir
 
 
 def _normalize_relative(relative_path: str) -> str:
@@ -252,21 +380,55 @@ def _read_remote_file(project_id: int, relative_path: str) -> str | None:
 
     object_spec = f"{ref}:{_normalize_relative(relative_path)}"
     try:
-        result = subprocess.run(
-            ["git", "-C", repo_dir, "show", object_spec],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
+        result = _run_git(repo_dir, ["show", object_spec], timeout=20)
     except Exception:
         return None
 
     return result.stdout
 
 
-def read_file(project_id: int, relative_path: str, git_repo_url: str | None = None) -> str | None:
+def _list_remote_dir(project_id: int, relative_path: str) -> list[str]:
     repo_dir = _repo_dir(project_id)
+    if not os.path.isdir(repo_dir):
+        return []
+    ref = _remote_head_ref(project_id)
+    if not ref:
+        return []
+    object_spec = f"{ref}:{_normalize_relative(relative_path)}"
+    try:
+        result = _run_git(repo_dir, ["ls-tree", "--name-only", object_spec], timeout=20)
+    except Exception:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _remote_dir_has_content(project_id: int, relative_path: str) -> bool:
+    repo_dir = _repo_dir(project_id)
+    if not os.path.isdir(repo_dir):
+        return False
+    ref = _remote_head_ref(project_id)
+    if not ref:
+        return False
+    path = _normalize_relative(relative_path)
+    try:
+        result = _run_git(repo_dir, ["ls-tree", "-r", "--name-only", ref, path], timeout=20)
+    except Exception:
+        return False
+    return any(line.strip() for line in result.stdout.splitlines())
+
+
+def read_file(
+    project_id: int,
+    relative_path: str,
+    git_repo_url: str | None = None,
+    *,
+    prefer_remote: bool = False,
+) -> str | None:
+    repo_dir = _repo_dir(project_id)
+    if prefer_remote:
+        remote_content = _read_remote_file(project_id, relative_path)
+        if remote_content is not None:
+            return remote_content
     try:
         file_path = _safe_join(repo_dir, relative_path)
     except PermissionError:
@@ -281,8 +443,19 @@ def read_file(project_id: int, relative_path: str, git_repo_url: str | None = No
     return _read_remote_file(project_id, relative_path)
 
 
-def read_json(project_id: int, relative_path: str, git_repo_url: str | None = None) -> dict | None:
-    content = read_file(project_id, relative_path, git_repo_url=git_repo_url)
+def read_json(
+    project_id: int,
+    relative_path: str,
+    git_repo_url: str | None = None,
+    *,
+    prefer_remote: bool = False,
+) -> dict | None:
+    content = read_file(
+        project_id,
+        relative_path,
+        git_repo_url=git_repo_url,
+        prefer_remote=prefer_remote,
+    )
     if content is None:
         return None
     try:
@@ -295,9 +468,19 @@ def read_json(project_id: int, relative_path: str, git_repo_url: str | None = No
             return None
 
 
-def list_dir(project_id: int, relative_path: str, git_repo_url: str | None = None) -> list[str]:
+def list_dir(
+    project_id: int,
+    relative_path: str,
+    git_repo_url: str | None = None,
+    *,
+    prefer_remote: bool = False,
+) -> list[str]:
     """List immediate entries in a repo subdirectory. Returns [] if not a dir."""
     repo_dir = _repo_dir(project_id)
+    if prefer_remote:
+        remote_entries = _list_remote_dir(project_id, relative_path)
+        if remote_entries:
+            return remote_entries
     try:
         candidate = _safe_join(repo_dir, relative_path)
     except PermissionError:
@@ -314,12 +497,20 @@ def list_dir(project_id: int, relative_path: str, git_repo_url: str | None = Non
             return sorted(os.listdir(workspace_dir))
         except OSError:
             return []
-    return []
+    return _list_remote_dir(project_id, relative_path)
 
 
-def dir_has_content(project_id: int, relative_path: str, git_repo_url: str | None = None) -> bool:
+def dir_has_content(
+    project_id: int,
+    relative_path: str,
+    git_repo_url: str | None = None,
+    *,
+    prefer_remote: bool = False,
+) -> bool:
     """True if relative_path is a directory containing at least one non-empty file."""
     repo_dir = _repo_dir(project_id)
+    if prefer_remote and _remote_dir_has_content(project_id, relative_path):
+        return True
     candidates: list[str] = []
     try:
         candidates.append(_safe_join(repo_dir, relative_path))
@@ -339,11 +530,19 @@ def dir_has_content(project_id: int, relative_path: str, git_repo_url: str | Non
                         return True
                 except OSError:
                     continue
-    return False
+    return _remote_dir_has_content(project_id, relative_path)
 
 
-def file_exists(project_id: int, relative_path: str, git_repo_url: str | None = None) -> bool:
+def file_exists(
+    project_id: int,
+    relative_path: str,
+    git_repo_url: str | None = None,
+    *,
+    prefer_remote: bool = False,
+) -> bool:
     repo_dir = _repo_dir(project_id)
+    if prefer_remote and _read_remote_file(project_id, relative_path) is not None:
+        return True
     try:
         candidate = _safe_join(repo_dir, relative_path)
     except PermissionError:

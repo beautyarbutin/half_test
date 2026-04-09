@@ -20,6 +20,12 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
   const [draftDescription, setDraftDescription] = useState(task.description || '');
   const [draftExpectedOutput, setDraftExpectedOutput] = useState(task.expected_output_path || '');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  // 预取的 Prompt。派发按钮在点击瞬间需要把 Prompt 同步写入剪贴板
+  // （以保留浏览器的 user activation），所以不能等到点击之后再去 await
+  // /generate-prompt —— 那会让 navigator.clipboard.writeText 因为 activation
+  // 失效而静默失败，导致剪贴板里残留上一次成功复制的 Prompt。
+  const [cachedPrompt, setCachedPrompt] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
   const assignee = agents.find((a) => a.id === task.assignee_agent_id);
 
@@ -48,14 +54,15 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
     description: draftDescription,
     expected_output_path: draftExpectedOutput,
   }), [draftDescription, draftExpectedOutput, draftTaskName]);
+  const hasDraftChanges = canEdit && (
+    normalizedDraft.task_name !== task.task_name
+    || normalizedDraft.description !== (task.description || '')
+    || normalizedDraft.expected_output_path !== (task.expected_output_path || '')
+  );
 
   useEffect(() => {
     if (!canEdit) return undefined;
-    if (
-      normalizedDraft.task_name === task.task_name
-      && normalizedDraft.description === (task.description || '')
-      && normalizedDraft.expected_output_path === (task.expected_output_path || '')
-    ) {
+    if (!hasDraftChanges) {
       return undefined;
     }
 
@@ -71,7 +78,7 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
     }, 600);
 
     return () => window.clearTimeout(timer);
-  }, [canEdit, normalizedDraft, onRefresh, task.description, task.expected_output_path, task.id, task.task_name]);
+  }, [canEdit, hasDraftChanges, normalizedDraft, onRefresh, task.description, task.expected_output_path, task.id, task.task_name]);
 
   useEffect(() => {
     if (saveState !== 'saved') return undefined;
@@ -79,26 +86,67 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
     return () => window.clearTimeout(timer);
   }, [saveState]);
 
+  // 在切换到一个可派发的任务时立即预取 Prompt，存到本地 state；
+  // 这样用户点击「复制 Prompt 并派发 / 重新派发」时可以同步写剪贴板。
+  // 任务的关键字段（描述、预期输出）变化时也要重新拉取。
+  useEffect(() => {
+    setCachedPrompt(null);
+    setPromptError(null);
+    if (!canOperate) return undefined;
+    if (hasDraftChanges) return undefined;
+    if (!['pending', 'needs_attention', 'running'].includes(task.status)) return undefined;
+
+    let cancelled = false;
+    api.post<{ prompt: string }>(
+      `/api/tasks/${task.id}/generate-prompt`,
+      { include_usage: false },
+    )
+      .then((resp) => {
+        if (cancelled) return;
+        setCachedPrompt(resp.prompt);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPromptError(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, task.status, task.task_name, task.description, task.expected_output_path, canOperate, hasDraftChanges]);
+
   async function performDispatch(action: 'dispatch' | 'redispatch') {
     if (!canOperate) {
       alert(`前序任务尚未全部完成，无法派发：${blockedPredecessors.map((taskItem) => taskItem.task_code).join(', ')}`);
       return;
     }
+    if (!cachedPrompt) {
+      alert(promptError
+        ? `Prompt 生成失败，已取消派发：${promptError}`
+        : 'Prompt 仍在准备中，请稍候再点击。');
+      return;
+    }
+
+    // 关键：在任何 await 之前同步把剪贴板写入操作发出去。
+    // copyText 内部第一行就同步调用 clipboard.writeText(...)，所以浏览器
+    // 在判定 user activation 时仍处于点击触发的同步执行栈中。
+    // 如果这里复制失败，必须显式抛错并中止派发，绝不能让用户拿到一个
+    // 「显示已复制但剪贴板里其实是上一次内容」的错觉。
+    let copyOk = false;
+    try {
+      copyOk = await copyText(cachedPrompt, navigator.clipboard);
+    } catch (err) {
+      alert(`复制 Prompt 到剪贴板失败，已取消派发：${err}`);
+      return;
+    }
+    if (!copyOk) {
+      alert('复制 Prompt 到剪贴板失败，已取消派发。请确认浏览器允许剪贴板权限后重试。');
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+
     setLoading(action);
     try {
-      // 1) Generate the prompt and put it on the clipboard FIRST. The user
-      //    cares about getting the prompt back as fast as possible — they're
-      //    about to paste it into an Agent. Show "已复制" immediately.
-      const promptResp = await api.post<{ prompt: string }>(
-        `/api/tasks/${task.id}/generate-prompt`,
-        { include_usage: false },
-      );
-      await copyText(promptResp.prompt, navigator.clipboard);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-
-      // 2) Then tell the backend the task has been dispatched. This is now a
-      //    pure DB write (no server-side git fetch/pull), so it's fast.
       await api.post(`/api/tasks/${task.id}/${action}`, {
         ignore_missing_predecessor_outputs: false,
       });
@@ -270,10 +318,14 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
             <button
               className="btn btn-primary"
               onClick={handleCopyPrompt}
-              disabled={loading === 'dispatch' || !canOperate}
+              disabled={loading === 'dispatch' || !canOperate || !cachedPrompt}
               title="生成当前任务的 Prompt，复制到剪贴板，并同步派发任务"
             >
-              {copied ? 'Prompt 已复制' : '复制 Prompt 并派发'}
+              {copied
+                ? 'Prompt 已复制'
+                : cachedPrompt
+                  ? '复制 Prompt 并派发'
+                  : (promptError ? 'Prompt 生成失败' : 'Prompt 准备中...')}
             </button>
           </div>
         )}
@@ -294,14 +346,16 @@ export default function TaskDetailPanel({ task, agents, allTasks, onRefresh }: P
           <button
             className="btn btn-secondary"
             onClick={handleRedispatch}
-            disabled={loading === 'redispatch'}
+            disabled={loading === 'redispatch' || !cachedPrompt}
             title="重新生成当前任务的 Prompt，复制到剪贴板，并重新派发"
           >
             {loading === 'redispatch'
               ? '派发中...'
               : copied
                 ? 'Prompt 已复制'
-                : '重新派发'}
+                : cachedPrompt
+                  ? '重新派发'
+                  : (promptError ? 'Prompt 生成失败' : 'Prompt 准备中...')}
           </button>
         )}
 

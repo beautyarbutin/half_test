@@ -6,7 +6,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from services.path_service import extract_json_path, normalize_expected_output_path
+from services.path_service import ExpectedOutputPathError, extract_json_path, normalize_expected_output_path
 
 
 class PathServiceTests(unittest.TestCase):
@@ -29,6 +29,71 @@ class PathServiceTests(unittest.TestCase):
             collaboration_dir="outputs/proj-4-f9a125",
         )
         self.assertEqual(normalized, "outputs/proj-4-f9a125/TASK-001/result.json")
+
+    def test_normalize_expected_output_path_treats_prefixed_and_unprefixed_equally(self):
+        prefixed = normalize_expected_output_path(
+            "outputs/proj-4-f9a125/TASK-001/result.json",
+            default_path="outputs/TASK-001/result.json",
+            collaboration_dir="outputs/proj-4-f9a125",
+        )
+        unprefixed = normalize_expected_output_path(
+            "TASK-001/result.json",
+            default_path="outputs/TASK-001/result.json",
+            collaboration_dir="outputs/proj-4-f9a125",
+        )
+        self.assertEqual(prefixed, unprefixed)
+
+    def test_normalize_expected_output_path_supports_suffixless_file(self):
+        normalized = normalize_expected_output_path(
+            "outputs/proj-4-f9a125/TASK-001/result",
+            default_path="outputs/TASK-001/result.json",
+            collaboration_dir="outputs/proj-4-f9a125",
+        )
+        self.assertEqual(normalized, "outputs/proj-4-f9a125/TASK-001/result")
+
+    def test_normalize_expected_output_path_normalizes_nfkc_width(self):
+        normalized = normalize_expected_output_path(
+            "outputs/proj-4-f9a125/ＡＢＣ１２３/result.json",
+            default_path="outputs/TASK-001/result.json",
+            collaboration_dir="outputs/proj-4-f9a125",
+        )
+        self.assertEqual(normalized, "outputs/proj-4-f9a125/ABC123/result.json")
+
+    def test_normalize_expected_output_path_rejects_action_phrase(self):
+        with self.assertRaises(ExpectedOutputPathError) as ctx:
+            normalize_expected_output_path(
+                "代码变更提交",
+                default_path="outputs/TASK-001/result.json",
+                collaboration_dir="outputs/proj-4-f9a125",
+            )
+        self.assertIn("action phrase", str(ctx.exception))
+
+    def test_normalize_expected_output_path_rejects_action_phrase_even_when_prefixed(self):
+        with self.assertRaises(ExpectedOutputPathError) as ctx:
+            normalize_expected_output_path(
+                "outputs/proj-4-f9a125/提交PR",
+                default_path="outputs/TASK-001/result.json",
+                collaboration_dir="outputs/proj-4-f9a125",
+            )
+        self.assertIn("action phrase", str(ctx.exception))
+
+    def test_normalize_expected_output_path_rejects_parent_traversal(self):
+        with self.assertRaises(ExpectedOutputPathError) as ctx:
+            normalize_expected_output_path(
+                "../foo",
+                default_path="outputs/TASK-001/result.json",
+                collaboration_dir="outputs/proj-4-f9a125",
+            )
+        self.assertIn("repository root", str(ctx.exception))
+
+    def test_normalize_expected_output_path_rejects_absolute_paths(self):
+        with self.assertRaises(ExpectedOutputPathError) as ctx:
+            normalize_expected_output_path(
+                "/tmp/result.json",
+                default_path="outputs/TASK-001/result.json",
+                collaboration_dir="outputs/proj-4-f9a125",
+            )
+        self.assertIn("repository-relative", str(ctx.exception))
 
 
 if __name__ == "__main__":

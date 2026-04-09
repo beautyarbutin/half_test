@@ -1,6 +1,7 @@
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,8 +12,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 from config import settings
 from services import git_service
-
-
 class GitServiceWorkspaceFallbackTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -83,6 +82,68 @@ class GitServiceWorkspaceFallbackTests(unittest.TestCase):
         mock_fetch.assert_called_once_with(3)
         mock_pull.assert_called_once_with(3)
 
+    def test_ensure_repo_sync_retries_retryable_fetch_failure(self):
+        with patch("services.git_service.os.path.exists", return_value=True), patch(
+            "services.git_service.fetch_repo",
+            side_effect=[RuntimeError("network is unreachable"), str(self.repos_dir / "3")],
+        ) as mock_fetch, patch(
+            "services.git_service.pull_repo",
+            return_value=str(self.repos_dir / "3"),
+        ) as mock_pull, patch("services.git_service.time.sleep") as mock_sleep:
+            status = git_service.ensure_repo_sync(3, "git@github.com:example-org/example-repo.git")
+
+        self.assertTrue(status.fetched)
+        self.assertTrue(status.remote_ready)
+        self.assertEqual(mock_fetch.call_count, 2)
+        mock_pull.assert_called_once_with(3)
+        mock_sleep.assert_called_once()
+
+    def test_ensure_repo_sync_uses_ttl_cache(self):
+        git_service._ensure_repo_last_run[3] = git_service.time.monotonic()
+        with patch("services.git_service.os.path.exists", return_value=True), patch(
+            "services.git_service.fetch_repo",
+        ) as mock_fetch, patch(
+            "services.git_service.pull_repo",
+        ) as mock_pull:
+            status = git_service.ensure_repo_sync(3, "git@github.com:example-org/example-repo.git")
+
+        self.assertTrue(status.used_cache)
+        mock_fetch.assert_not_called()
+        mock_pull.assert_not_called()
+
+    def test_ensure_repo_sync_serializes_concurrent_calls_per_project(self):
+        release_fetch = threading.Event()
+        fetch_calls: list[int] = []
+
+        def fetch_side_effect(project_id):
+            fetch_calls.append(project_id)
+            release_fetch.wait(timeout=2)
+            return str(self.repos_dir / "3")
+
+        with patch("services.git_service.os.path.exists", return_value=True), patch(
+            "services.git_service.fetch_repo",
+            side_effect=fetch_side_effect,
+        ), patch(
+            "services.git_service.pull_repo",
+            return_value=str(self.repos_dir / "3"),
+        ):
+            results = []
+
+            def worker():
+                results.append(git_service.ensure_repo_sync(3, "git@github.com:example-org/example-repo.git"))
+
+            t1 = threading.Thread(target=worker)
+            t2 = threading.Thread(target=worker)
+            t1.start()
+            t2.start()
+            release_fetch.set()
+            t1.join()
+            t2.join()
+
+        self.assertEqual(len(fetch_calls), 1)
+        self.assertEqual(len(results), 2)
+        self.assertTrue(any(result.used_cache for result in results))
+
     def test_read_json_falls_back_to_remote_tracking_branch(self):
         def run_side_effect(args, check, capture_output, text, timeout):
             command = tuple(args)
@@ -124,6 +185,32 @@ class GitServiceWorkspaceFallbackTests(unittest.TestCase):
             exists = git_service.file_exists(3, "outputs/proj-3/TASK-003/result.json", git_repo_url="git@github.com:example-org/example-repo.git")
 
         self.assertTrue(exists)
+
+    def test_list_dir_prefers_remote_when_requested(self):
+        def run_side_effect(args, check, capture_output, text, timeout):
+            command = tuple(args)
+            if command[-2:] == ("symbolic-ref", "refs/remotes/origin/HEAD"):
+                result = type("Result", (), {})()
+                result.stdout = "refs/remotes/origin/main\n"
+                return result
+            if command[-3] == "ls-tree":
+                result = type("Result", (), {})()
+                result.stdout = "result.md\nusage.json\n"
+                return result
+            raise AssertionError(f"unexpected command: {command}")
+
+        with patch("services.git_service._workspace_repo_identity", return_value=None), patch(
+            "services.git_service.subprocess.run",
+            side_effect=run_side_effect,
+        ):
+            entries = git_service.list_dir(
+                3,
+                "outputs/proj-3/TASK-003",
+                git_repo_url="git@github.com:example-org/example-repo.git",
+                prefer_remote=True,
+            )
+
+        self.assertEqual(entries, ["result.md", "usage.json"])
 
 
 if __name__ == "__main__":
