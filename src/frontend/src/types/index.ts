@@ -111,6 +111,20 @@ export interface Plan {
   updated_at?: string;
 }
 
+export interface ProcessTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  agent_count: number;
+  agent_slots: string[];
+  template_json: string;
+  created_by: number | null;
+  updated_by: number | null;
+  can_edit: boolean;
+  created_at: string | null;
+  updated_at?: string | null;
+}
+
 export interface Task {
   id: number;
   project_id: number;

@@ -106,6 +106,21 @@ class ProjectPlan(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class ProcessTemplate(Base):
+    __tablename__ = "process_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    agent_count = Column(Integer, nullable=False, default=0)
+    agent_slots_json = Column(Text, default="[]")
+    template_json = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    updated_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (

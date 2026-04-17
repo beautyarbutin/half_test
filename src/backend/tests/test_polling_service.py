@@ -470,6 +470,29 @@ class PollingServiceTests(unittest.TestCase):
         self.assertIn("Plan JSON not found", refreshed.last_error)
         self.assertNotIn("Git sync warning", refreshed.last_error)
 
+    def test_poll_project_skips_template_source_path_for_running_plan(self):
+        project, plan = self._seed_running_plan(dispatched_minutes_ago=31)
+        db = self.SessionLocal()
+        stored = db.query(ProjectPlan).filter(ProjectPlan.id == plan.id).first()
+        stored.source_path = "template:123"
+        db.commit()
+        db.close()
+
+        with patch(
+            "services.polling_service.git_service.ensure_repo_sync",
+            return_value=RepoSyncStatus(repo_dir="/tmp/repo", fetched=True, pulled=True, remote_ready=True),
+        ), patch(
+            "services.polling_service.git_service.read_json",
+            side_effect=AssertionError("template source paths must not be read from git"),
+        ):
+            poll_project(self.SessionLocal(), project)
+
+        verify_db = self.SessionLocal()
+        self.addCleanup(verify_db.close)
+        refreshed = verify_db.query(ProjectPlan).filter(ProjectPlan.id == plan.id).first()
+        self.assertEqual(refreshed.status, "running")
+        self.assertIsNone(refreshed.last_error)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from config import settings, validate_security_config
 from database import engine, SessionLocal, Base
-from models import Agent, User, AgentTypeConfig, ModelDefinition, AgentTypeModelMap, Project, ProjectPlan, Task, GlobalSetting
+from models import Agent, User, AgentTypeConfig, ModelDefinition, AgentTypeModelMap, Project, ProjectPlan, Task, GlobalSetting, ProcessTemplate
 from auth import hash_password
 from routers import auth as auth_router
 from routers import agents as agents_router
@@ -21,6 +21,7 @@ from routers import polling as polling_router
 from routers import agent_settings as agent_settings_router
 from routers import settings as settings_router
 from routers import users as users_router
+from routers import process_templates as process_templates_router
 from services.polling_service import polling_loop
 from services.prompt_settings import DEFAULT_PLAN_CO_LOCATION_GUIDANCE, PLAN_CO_LOCATION_GUIDANCE_KEY
 
@@ -428,6 +429,7 @@ app.include_router(agent_settings_router.router)
 app.include_router(settings_router.router)
 app.include_router(users_router.router)
 app.include_router(users_router.audit_router)
+app.include_router(process_templates_router.router)
 
 
 @app.get("/")

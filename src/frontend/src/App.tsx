@@ -14,6 +14,7 @@ const SummaryPage = lazy(() => import('./pages/SummaryPage'));
 const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const AgentSettingsPage = lazy(() => import('./pages/AgentSettingsPage'));
 const UserManagementPage = lazy(() => import('./pages/UserManagementPage'));
+const ProcessTemplatesPage = lazy(() => import('./pages/ProcessTemplatesPage'));
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const token = localStorage.getItem('token');
@@ -49,6 +50,10 @@ export default function App() {
           <Route path="projects/:id/tasks" element={<Suspense fallback={<PageFallback />}><TasksPage /></Suspense>} />
           <Route path="projects/:id/summary" element={<Suspense fallback={<PageFallback />}><SummaryPage /></Suspense>} />
           <Route path="settings" element={<Suspense fallback={<PageFallback />}><ProjectSettingsPage /></Suspense>} />
+          <Route path="templates" element={<Suspense fallback={<PageFallback />}><ProcessTemplatesPage /></Suspense>} />
+          <Route path="templates/new" element={<Suspense fallback={<PageFallback />}><ProcessTemplatesPage /></Suspense>} />
+          <Route path="templates/:templateId" element={<Suspense fallback={<PageFallback />}><ProcessTemplatesPage /></Suspense>} />
+          <Route path="templates/:templateId/edit" element={<Suspense fallback={<PageFallback />}><ProcessTemplatesPage /></Suspense>} />
           <Route path="agents" element={<Suspense fallback={<PageFallback />}><AgentsPage /></Suspense>} />
           <Route path="agents/settings" element={<Suspense fallback={<PageFallback />}><AgentSettingsPage /></Suspense>} />
           <Route path="admin/users" element={<Suspense fallback={<PageFallback />}><UserManagementPage /></Suspense>} />

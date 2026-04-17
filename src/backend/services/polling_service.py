@@ -143,6 +143,14 @@ def poll_project(db: Session, project: Project) -> None:
             )
             continue
         source_path = _plan_source_path(project, plan)
+        if source_path.startswith("template:"):
+            logger.warning(
+                "Skipping non-file template plan source while polling project %s plan %s: %s",
+                project.id,
+                plan.id,
+                source_path,
+            )
+            continue
         plan_data = git_service.read_json(
             project.id,
             source_path,

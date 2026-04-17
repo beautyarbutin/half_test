@@ -383,17 +383,12 @@ def import_plan(project_id: int, body: PlanImport, db: Session = Depends(get_db)
     return _build_plan_response(plan)
 
 
-@router.post("/{project_id}/plans/finalize")
-def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    project = get_owned_project(db, project_id, user)
-
-    plan = db.query(ProjectPlan).filter(
-        ProjectPlan.id == body.plan_id,
-        ProjectPlan.project_id == project_id,
-    ).first()
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-
+def finalize_plan_record(
+    db: Session,
+    project: Project,
+    plan: ProjectPlan,
+    user: User,
+) -> dict:
     # Prevent double finalization
     if plan.plan_type == "final" and plan.is_selected:
         raise HTTPException(status_code=400, detail="Plan already finalized")
@@ -401,7 +396,7 @@ def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(
         raise HTTPException(status_code=400, detail="Plan is not ready to finalize")
 
     # Check if project already has tasks (another plan was finalized)
-    existing_tasks = db.query(Task).filter(Task.project_id == project_id).count()
+    existing_tasks = db.query(Task).filter(Task.project_id == project.id).count()
     if existing_tasks > 0:
         raise HTTPException(status_code=400, detail="Project already has tasks from a finalized plan")
 
@@ -463,7 +458,7 @@ def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(
             ) from exc
 
         task = Task(
-            project_id=project_id,
+            project_id=project.id,
             plan_id=plan.id,
             task_code=task_code,
             task_name=t.get("task_name", task_code),
@@ -488,3 +483,17 @@ def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(
         "tasks_created": len(created_tasks),
         "project_status": project.status,
     }
+
+
+@router.post("/{project_id}/plans/finalize")
+def finalize_plan(project_id: int, body: FinalizeRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    project = get_owned_project(db, project_id, user)
+
+    plan = db.query(ProjectPlan).filter(
+        ProjectPlan.id == body.plan_id,
+        ProjectPlan.project_id == project_id,
+    ).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    return finalize_plan_record(db, project, plan, user)

@@ -7,7 +7,6 @@ import SectionCard from '../components/SectionCard';
 import StatusBadge from '../components/StatusBadge';
 import ModelBadge from '../components/ModelBadge';
 import { deriveAgentStatus, getAgentModels, summarizeAgentCapabilities } from '../utils/agents';
-import { DEFAULT_PLANNING_MODE, PLANNING_MODE_OPTIONS, PlanningMode, normalizePlanningMode } from '../utils/planningMode';
 
 export default function ProjectNewPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,7 +23,6 @@ export default function ProjectNewPage() {
   const [pollingStartDelayMinutes, setPollingStartDelayMinutes] = useState<number | null>(null);
   const [pollingStartDelaySeconds, setPollingStartDelaySeconds] = useState<number | null>(null);
   const [taskTimeoutMinutes, setTaskTimeoutMinutes] = useState<number | null>(10);
-  const [planningMode, setPlanningMode] = useState<PlanningMode>(DEFAULT_PLANNING_MODE);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState('');
@@ -67,7 +65,6 @@ export default function ProjectNewPage() {
           setPollingStartDelayMinutes(project.polling_start_delay_minutes ?? null);
           setPollingStartDelaySeconds(project.polling_start_delay_seconds ?? null);
           setTaskTimeoutMinutes(project.task_timeout_minutes ?? globalPolling?.task_timeout_minutes ?? 10);
-          setPlanningMode(normalizePlanningMode(project.planning_mode));
         } else if (globalPolling) {
           // Prefill from global defaults so the user starts with the
           // configured range/delay and can adjust per-project.
@@ -150,7 +147,6 @@ export default function ProjectNewPage() {
         polling_start_delay_minutes: pollingStartDelayMinutes,
         polling_start_delay_seconds: pollingStartDelaySeconds,
         task_timeout_minutes: taskTimeoutMinutes,
-        planning_mode: planningMode,
       };
       const project = isEditMode
         ? await api.put<Project>(`/api/projects/${id}`, payload)
@@ -185,26 +181,6 @@ export default function ProjectNewPage() {
           <div className="form-group">
             <label htmlFor="goal">项目目标</label>
             <textarea id="goal" value={goal} onChange={(e) => setGoal(e.target.value)} required rows={4} placeholder="描述项目要完成什么、交付什么，以及验收标准。" />
-          </div>
-        </SectionCard>
-
-        <SectionCard title="模式" description="用于后续 Plan 规划 Prompt 的任务拆分、Agent 分配和模型选择策略">
-          <div className="planning-mode-options" role="radiogroup" aria-label="项目规划模式">
-            {PLANNING_MODE_OPTIONS.map((option) => (
-              <label key={option.value} className={`planning-mode-option ${planningMode === option.value ? 'selected' : ''}`}>
-                <input
-                  type="radio"
-                  name="planning-mode"
-                  value={option.value}
-                  checked={planningMode === option.value}
-                  onChange={() => setPlanningMode(option.value)}
-                />
-                <span className="planning-mode-option-copy">
-                  <span className="planning-mode-option-label">{option.label}</span>
-                  <span className="planning-mode-option-description">{option.description}</span>
-                </span>
-              </label>
-            ))}
           </div>
         </SectionCard>
 

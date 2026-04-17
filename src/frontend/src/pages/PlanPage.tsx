@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { copyText, getPlanIdToFinalize } from '../contracts';
-import { Agent, Plan, Project } from '../types';
+import { Agent, Plan, ProcessTemplate, Project } from '../types';
 import { getAgentModels } from '../utils/agents';
-import { getPlanningModeMeta } from '../utils/planningMode';
+import { DEFAULT_PLANNING_MODE, PLANNING_MODE_OPTIONS, PlanningMode, getPlanningModeMeta, normalizePlanningMode } from '../utils/planningMode';
 
 function formatDuration(seconds: number): string {
   const safeSeconds = Math.max(0, seconds);
@@ -33,9 +33,14 @@ export default function PlanPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [templates, setTemplates] = useState<ProcessTemplate[]>([]);
+  const [flowSource, setFlowSource] = useState<'prompt' | 'template'>('prompt');
   const [planningBrief, setPlanningBrief] = useState('');
+  const [planningMode, setPlanningMode] = useState<PlanningMode>(DEFAULT_PLANNING_MODE);
   const [selectedAgentIds, setSelectedAgentIds] = useState<number[]>([]);
   const [selectedAgentModels, setSelectedAgentModels] = useState<Record<number, string | null>>({});
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [slotAgentIds, setSlotAgentIds] = useState<Record<string, number | null>>({});
   const [promptText, setPromptText] = useState('');
   const [currentPlanId, setCurrentPlanId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -52,16 +57,20 @@ export default function PlanPage() {
     void api.getCached<Agent[]>('/api/agents', (value) => setAgents(value));
     void api.getCached<Project>(`/api/projects/${id}`, (value) => {
       setProject(value);
+      setPlanningMode(normalizePlanningMode(value.planning_mode));
       setLoading(false);
     });
     try {
-      const [projectData, planList] = await Promise.all([
+      const [projectData, planList, templateList] = await Promise.all([
         api.get<Project>(`/api/projects/${id}`),
         api.get<Plan[]>(`/api/projects/${id}/plans`),
+        api.get<ProcessTemplate[]>('/api/process-templates'),
       ]);
       setProject(projectData);
       setPlans(planList);
+      setTemplates(templateList);
       setPlanningBrief((current) => current || projectData.goal || '');
+      setPlanningMode(normalizePlanningMode(projectData.planning_mode));
 
       const latestPlan = [...planList].reverse()[0] || null;
       if (latestPlan) {
@@ -93,7 +102,20 @@ export default function PlanPage() {
 
   const latestPlan = useMemo(() => [...plans].reverse()[0] || null, [plans]);
   const statusMeta = getStatusMeta(latestPlan);
-  const planningModeMeta = getPlanningModeMeta(project?.planning_mode);
+  const planningModeMeta = getPlanningModeMeta(planningMode);
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === selectedTemplateId) || null,
+    [selectedTemplateId, templates]
+  );
+  const mappedAgentIds = useMemo(
+    () => Object.values(slotAgentIds).filter((value): value is number => typeof value === 'number'),
+    [slotAgentIds]
+  );
+  const templateMappingComplete = Boolean(
+    selectedTemplate
+    && selectedTemplate.agent_slots.every((slot) => typeof slotAgentIds[slot] === 'number')
+    && new Set(mappedAgentIds).size === mappedAgentIds.length
+  );
 
   useEffect(() => {
     if (!latestPlan || latestPlan.status !== 'running') {
@@ -178,6 +200,41 @@ export default function PlanPage() {
     });
   }
 
+  function handleSelectTemplate(templateId: number) {
+    const template = templates.find((item) => item.id === templateId) || null;
+    setSelectedTemplateId(templateId);
+    setSlotAgentIds(Object.fromEntries((template?.agent_slots || []).map((slot) => [slot, null])));
+  }
+
+  function updateSlotAgent(slot: string, agentIdValue: string) {
+    setSlotAgentIds((current) => ({
+      ...current,
+      [slot]: agentIdValue ? Number(agentIdValue) : null,
+    }));
+  }
+
+  async function handleApplyTemplate() {
+    setActionLoading('apply-template');
+    setError('');
+    try {
+      if (!selectedTemplate) {
+        throw new Error('请先选择一个流程模版。');
+      }
+      if (!templateMappingComplete) {
+        throw new Error('请完成所有角色映射，且不要重复选择同一个 Agent。');
+      }
+      await api.post(`/api/process-templates/${selectedTemplate.id}/apply/${id}`, {
+        slot_agent_ids: slotAgentIds,
+      });
+      api.invalidate(`/api/projects/${id}`);
+      navigate(`/projects/${id}/tasks`);
+    } catch (err) {
+      setError(`应用流程模版失败：${err}`);
+    } finally {
+      setActionLoading('');
+    }
+  }
+
   async function handleGeneratePrompt() {
     setActionLoading('generate');
     setError('');
@@ -189,7 +246,7 @@ export default function PlanPage() {
         throw new Error('请至少勾选 1 个参与规划的 Agent。');
       }
 
-      await api.put<Project>(`/api/projects/${id}`, { goal: planningBrief });
+      await api.put<Project>(`/api/projects/${id}`, { goal: planningBrief, planning_mode: planningMode });
       const result = await api.post<{ prompt: string; plan_id: number; source_path: string }>(
         `/api/projects/${id}/plans/generate-prompt`,
         {
@@ -339,109 +396,249 @@ export default function PlanPage() {
           <section className="plan-card">
             <div className="plan-card-header">
               <div>
-                <h3>2. 生成规划 Prompt</h3>
-                <p>先勾选这次规划会参与的 Agent，再生成 Prompt。拷贝 Prompt 后由后端按项目轮询配置启动检测；页面仅做轻量状态同步，不再固定主动触发后端轮询。</p>
+                <h3>2. 选择流程来源</h3>
+                <p>可由 Prompt 生成新的流程，也可直接使用已保存的流程模版生成任务。</p>
               </div>
             </div>
 
             <div className="plan-field">
-              <label>本次参与规划的 Agent</label>
-              <div className="plan-agent-grid">
-                {projectAgents.map((agent) => (
-                  <div key={agent.id} className={`agent-option ${selectedAgentIds.includes(agent.id) ? 'selected' : ''}`}>
-                    <label className="agent-option-check">
-                      <input
-                        type="checkbox"
-                        checked={selectedAgentIds.includes(agent.id)}
-                        onChange={() => toggleSelectedAgent(agent.id)}
-                      />
-                      <span className="agent-option-name">{agent.name}</span>
-                      {' '}
-                      <span className="agent-option-type">{agent.agent_type}</span>
-                    </label>
-                    <span className="agent-option-model-list">
-                      {getAgentModels(agent).map((model) => model.model_name).join(' / ') || '未配置模型'}
-                    </span>
-                    {selectedAgentIds.includes(agent.id) && getAgentModels(agent).length > 0 && (
-                      <div className="agent-option-model-picker">
-                        <label>本项目使用模型</label>
-                        <select
-                          value={selectedAgentModels[agent.id] || ''}
-                          onChange={(event) => updateSelectedAgentModel(agent.id, event.target.value)}
-                        >
-                          <option value="">自动选择最适合的模型</option>
-                          {getAgentModels(agent).map((model) => (
-                            <option key={model.model_name} value={model.model_name}>
-                              {model.model_name}{model.capability ? ` | ${model.capability}` : ''}
-                            </option>
-                          ))}
-                        </select>
+              <label>流程来源</label>
+              <div className="planning-mode-options" role="radiogroup" aria-label="流程来源">
+                <label className={`planning-mode-option ${flowSource === 'prompt' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="flow-source"
+                    checked={flowSource === 'prompt'}
+                    onChange={() => setFlowSource('prompt')}
+                  />
+                  <span className="planning-mode-option-copy">
+                    <span className="planning-mode-option-label">由 Prompt 生成流程</span>
+                    <span className="planning-mode-option-description">生成规划 Prompt，交给外部 Agent 产出 plan JSON。</span>
+                  </span>
+                </label>
+                <label className={`planning-mode-option ${flowSource === 'template' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="flow-source"
+                    checked={flowSource === 'template'}
+                    onChange={() => setFlowSource('template')}
+                  />
+                  <span className="planning-mode-option-copy">
+                    <span className="planning-mode-option-label">使用模版生成流程</span>
+                    <span className="planning-mode-option-description">选择预定义流程模版，完成角色映射后直接生成任务。</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {flowSource === 'prompt' && (
+              <>
+                <div className="plan-field">
+                  <label>规划模式</label>
+                  <div className="planning-mode-options" role="radiogroup" aria-label="项目规划模式">
+                    {PLANNING_MODE_OPTIONS.map((option) => (
+                      <label key={option.value} className={`planning-mode-option ${planningMode === option.value ? 'selected' : ''}`}>
+                        <input
+                          type="radio"
+                          name="planning-mode"
+                          value={option.value}
+                          checked={planningMode === option.value}
+                          onChange={() => setPlanningMode(option.value)}
+                        />
+                        <span className="planning-mode-option-copy">
+                          <span className="planning-mode-option-label">{option.label}</span>
+                          <span className="planning-mode-option-description">{option.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="plan-field">
+                  <label>本次参与规划的 Agent</label>
+                  <div className="plan-agent-grid">
+                    {projectAgents.map((agent) => (
+                      <div key={agent.id} className={`agent-option ${selectedAgentIds.includes(agent.id) ? 'selected' : ''}`}>
+                        <label className="agent-option-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedAgentIds.includes(agent.id)}
+                            onChange={() => toggleSelectedAgent(agent.id)}
+                          />
+                          <span className="agent-option-name">{agent.name}</span>
+                          {' '}
+                          <span className="agent-option-type">{agent.agent_type}</span>
+                        </label>
+                        <span className="agent-option-model-list">
+                          {getAgentModels(agent).map((model) => model.model_name).join(' / ') || '未配置模型'}
+                        </span>
+                        {selectedAgentIds.includes(agent.id) && getAgentModels(agent).length > 0 && (
+                          <div className="agent-option-model-picker">
+                            <label>本项目使用模型</label>
+                            <select
+                              value={selectedAgentModels[agent.id] || ''}
+                              onChange={(event) => updateSelectedAgentModel(agent.id, event.target.value)}
+                            >
+                              <option value="">自动选择最适合的模型</option>
+                              {getAgentModels(agent).map((model) => (
+                                <option key={model.model_name} value={model.model_name}>
+                                  {model.model_name}{model.capability ? ` | ${model.capability}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="plan-field">
+                  <label>本次发给 Agent 的 Prompt</label>
+                  <textarea
+                    value={promptText}
+                    onChange={(event) => setPromptText(event.target.value)}
+                    rows={10}
+                    className="import-textarea"
+                    placeholder="点击“生成 Prompt”后，这里会显示本次规划 Prompt。"
+                  />
+                </div>
+
+                <div className="plan-prompt-actions">
+                  <button className="btn btn-secondary" onClick={handleGeneratePrompt} disabled={actionLoading === 'generate'}>
+                    {actionLoading === 'generate' ? '生成中...' : '生成 Prompt'}
+                  </button>
+                  <button className="btn btn-primary" onClick={handleCopyPrompt} disabled={actionLoading === 'copy' || !promptText.trim() || !currentPlanId}>
+                    {actionLoading === 'copy' ? '拷贝中...' : '拷贝 Prompt'}
+                  </button>
+                </div>
+
+                <div className="plan-status-banner">
+                  <div className="plan-status-line">
+                    <span className={`status-light status-light-${statusMeta.color}`} />
+                    <strong>当前状态：</strong>
+                    <span>{statusMeta.text}</span>
+                  </div>
+                  <div>
+                    <strong>轮询路径：</strong>{latestPlan?.source_path || (project?.collaboration_dir ? `${project.collaboration_dir}/plan.json` : 'plan.json')}
+                  </div>
+                  {latestPlan?.status === 'running' && timerPlanId === latestPlan.id && (
+                    <div>
+                      <strong>已运行：</strong>{formatDuration(elapsedSeconds)}
+                    </div>
+                  )}
+                  {isAutoFinalizing && <div>已查询到规划结果，正在自动进入下一页...</div>}
+                  {latestPlan?.last_error && <div className="plan-status-error">{latestPlan.last_error}</div>}
+                </div>
+              </>
+            )}
+
+            {flowSource === 'template' && (
+              <>
+                <div className="plan-field">
+                  <label>流程模版</label>
+                  <div className="template-select-list">
+                    {templates.map((template) => {
+                      const disabled = projectAgents.length < template.agent_count;
+                      return (
+                        <button
+                          type="button"
+                          key={template.id}
+                          className={`template-select-item ${selectedTemplateId === template.id ? 'selected' : ''}`}
+                          onClick={() => handleSelectTemplate(template.id)}
+                          disabled={disabled}
+                        >
+                          <strong>{template.name}</strong>
+                          <span>{template.description || '暂无适用场景说明'}</span>
+                          <small>需要 {template.agent_count} 个 Agent：{template.agent_slots.join(' / ')}</small>
+                          {disabled && <small className="template-warning">当前项目 Agent 数量不足</small>}
+                        </button>
+                      );
+                    })}
+                    {!templates.length && <div className="helper-text">还没有流程模版，请先到“流程模版”页面创建。</div>}
+                  </div>
+                </div>
+
+                {selectedTemplate && (
+                  <div className="plan-field">
+                    <label>角色映射</label>
+                    <div className="template-slot-map">
+                      {selectedTemplate.agent_slots.map((slot) => {
+                        const selectedAgentId = slotAgentIds[slot] ?? null;
+                        return (
+                          <div key={slot} className="template-slot-row">
+                            <span>{slot}</span>
+                            <select
+                              value={selectedAgentId ?? ''}
+                              onChange={(event) => updateSlotAgent(slot, event.target.value)}
+                            >
+                              <option value="">选择 Agent</option>
+                              {projectAgents.map((agent) => (
+                                <option
+                                  key={agent.id}
+                                  value={agent.id}
+                                  disabled={mappedAgentIds.includes(agent.id) && selectedAgentId !== agent.id}
+                                >
+                                  {agent.name} ({agent.agent_type})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {mappedAgentIds.length !== new Set(mappedAgentIds).size && (
+                      <div className="helper-text helper-text-error">不允许多个槽位映射到同一个 Agent。</div>
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
+                )}
 
-            <div className="plan-field">
-              <label>本次发给 Agent 的 Prompt</label>
-              <textarea
-                value={promptText}
-                onChange={(event) => setPromptText(event.target.value)}
-                rows={10}
-                className="import-textarea"
-                placeholder="点击“生成 Prompt”后，这里会显示本次规划 Prompt。"
-              />
-            </div>
-
-            <div className="plan-prompt-actions">
-              <button className="btn btn-secondary" onClick={handleGeneratePrompt} disabled={actionLoading === 'generate'}>
-                {actionLoading === 'generate' ? '生成中...' : '生成 Prompt'}
-              </button>
-              <button className="btn btn-primary" onClick={handleCopyPrompt} disabled={actionLoading === 'copy' || !promptText.trim() || !currentPlanId}>
-                {actionLoading === 'copy' ? '拷贝中...' : '拷贝 Prompt'}
-              </button>
-            </div>
-
-            <div className="plan-status-banner">
-              <div className="plan-status-line">
-                <span className={`status-light status-light-${statusMeta.color}`} />
-                <strong>当前状态：</strong>
-                <span>{statusMeta.text}</span>
-              </div>
-              <div>
-                <strong>轮询路径：</strong>{latestPlan?.source_path || (project?.collaboration_dir ? `${project.collaboration_dir}/plan.json` : 'plan.json')}
-              </div>
-              {latestPlan?.status === 'running' && timerPlanId === latestPlan.id && (
-                <div>
-                  <strong>已运行：</strong>{formatDuration(elapsedSeconds)}
+                <div className="plan-prompt-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleApplyTemplate}
+                    disabled={actionLoading === 'apply-template' || !templateMappingComplete}
+                  >
+                    {actionLoading === 'apply-template' ? '生成中...' : '下一步'}
+                  </button>
                 </div>
-              )}
-              {isAutoFinalizing && <div>已查询到规划结果，正在自动进入下一页...</div>}
-              {latestPlan?.last_error && <div className="plan-status-error">{latestPlan.last_error}</div>}
-            </div>
+              </>
+            )}
           </section>
         </div>
 
         <aside className="plan-side-column">
 
-          <section className="plan-card">
-            <h3>当前模式</h3>
-            <div className="plan-mode-summary">
-              <strong>{planningModeMeta.label}</strong>
-              <p>{planningModeMeta.description}</p>
-            </div>
-          </section>
+          {flowSource === 'prompt' && (
+            <section className="plan-card">
+              <h3>当前模式</h3>
+              <div className="plan-mode-summary">
+                <strong>{planningModeMeta.label}</strong>
+                <p>{planningModeMeta.description}</p>
+              </div>
+            </section>
+          )}
 
           <section className="plan-card">
             <h3>当前说明</h3>
             <ul className="plan-note-list">
-              <li>点击“生成 Prompt”只会生成提示词，不会启动轮询。</li>
-              <li>点击“拷贝 Prompt”后才会正式启动或恢复本次规划的轮询。</li>
-              <li>若轮询已完成，再次点击“拷贝 Prompt”会启动新一轮轮询。</li>
-              <li>每个参与规划的 Agent 都可以手动指定一个模型；留空时系统会根据任务目标和模型能力自动选择。</li>
-              <li>每一轮规划都会使用唯一文件名，例如 `plan-123.json`，避免复用旧结果。</li>
-              <li>查询到合法规划结果后，系统会自动定稿并跳转到执行页面。</li>
+              {flowSource === 'prompt' ? (
+                <>
+                  <li>点击“生成 Prompt”只会生成提示词，不会启动轮询。</li>
+                  <li>点击“拷贝 Prompt”后才会正式启动或恢复本次规划的轮询。</li>
+                  <li>若轮询已完成，再次点击“拷贝 Prompt”会启动新一轮轮询。</li>
+                  <li>每个参与规划的 Agent 都可以手动指定一个模型；留空时系统会根据任务目标和模型能力自动选择。</li>
+                  <li>每一轮规划都会使用唯一文件名，例如 `plan-123.json`，避免复用旧结果。</li>
+                  <li>查询到合法规划结果后，系统会自动定稿并跳转到执行页面。</li>
+                </>
+              ) : (
+                <>
+                  <li>模版路径不会生成 Prompt，也不会启动规划轮询。</li>
+                  <li>每个角色槽位必须映射到一个项目已选 Agent。</li>
+                  <li>同一个 Agent 不能同时映射到多个槽位。</li>
+                  <li>点击“下一步”后会直接生成任务并进入执行页面。</li>
+                </>
+              )}
             </ul>
           </section>
         </aside>
