@@ -10,7 +10,6 @@ services:
       - HALF_SECRET_KEY=${HALF_SECRET_KEY:?HALF_SECRET_KEY is required. See .env.example.}
       - HALF_ALLOW_REGISTER=${HALF_ALLOW_REGISTER:-false}
       - HALF_STRICT_SECURITY=${HALF_STRICT_SECURITY:-true}
-      - HALF_WORKSPACE_ROOT=/workspace
     volumes:
       - backend-data:/app/data
       - backend-repos:/app/repos

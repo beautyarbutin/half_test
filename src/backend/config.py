@@ -36,7 +36,7 @@ class Settings:
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     POLL_INTERVAL_SECONDS: int = 45
-    STRICT_SECURITY: bool = _truthy(os.getenv("HALF_STRICT_SECURITY", "false"))
+    STRICT_SECURITY: bool = _truthy(os.getenv("HALF_STRICT_SECURITY", "true"))
     CORS_ORIGINS: str = os.getenv("HALF_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
     ALLOWED_CORS_ORIGINS: list[str] = [
         o.strip()
@@ -63,11 +63,19 @@ def validate_security_config() -> None:
             "HALF_SECRET_KEY must be set to a strong value (>=32 chars, not the built-in default). "
             "Generate one: export HALF_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
         )
-    if settings.ADMIN_PASSWORD in _DEFAULT_INSECURE_PASSWORDS or len(settings.ADMIN_PASSWORD) < 8:
+    try:
+        validate_user_password(settings.ADMIN_PASSWORD)
+    except ValueError:
         problems.append(
             "HALF_ADMIN_PASSWORD must be set to a strong value (>=8 chars, not a known default). "
             "It should contain uppercase, lowercase, and digits."
         )
+    else:
+        if settings.ADMIN_PASSWORD in _DEFAULT_INSECURE_PASSWORDS:
+            problems.append(
+                "HALF_ADMIN_PASSWORD must be set to a strong value (>=8 chars, not a known default). "
+                "It should contain uppercase, lowercase, and digits."
+            )
 
     if not problems:
         return

@@ -407,15 +407,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="HALF Backend", version="1.0.0", lifespan=lifespan)
 
 _cors_origins_raw = (settings.CORS_ORIGINS or "").strip()
-if _cors_origins_raw:
-    _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
-    _cors_credentials = True
-else:
-    # No explicit allow-list configured. Fall back to wildcard but disable
-    # credentials so the combination cannot be exploited as a confused-deputy
-    # CSRF vector. Operators should set HALF_CORS_ORIGINS in production.
-    _cors_origins = ["*"]
-    _cors_credentials = False
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+_cors_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
