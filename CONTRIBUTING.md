@@ -40,8 +40,8 @@ feature changes.
 
 ## Code Style
 
-- Backend: `ruff` defaults, `black` 88-column line length
-- Frontend: `eslint` + `prettier` configs in the repo
+- Backend: follow the style of the existing codebase
+- Frontend: follow the style of the existing codebase
 
 ## License
 

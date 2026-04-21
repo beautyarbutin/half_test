@@ -1,6 +1,6 @@
 # HALF MVP 技术实现规格
 
-**适用范围：** 2026-04-08 实验室内部演示版 MVP
+**适用范围：** v0.x early open-source MVP
 **配套文档：** `prd_final.md`（需求文档）
 
 ---
@@ -578,19 +578,19 @@ Agent 编辑接口说明：
 
 ## 八、安全与硬化设计(2026-04-08)
 
-依据 0408 测试报告与 T1-ANALYZE,本节固化 T2-CODE-FIX 已实现的安全与主流程修复设计。
+本节固化当前公开版本中已经实现的安全与主流程修复设计。
 
 ### 8.1 启动期配置校验(`config.py::validate_security_config`)
 
 - 检查 `HALF_SECRET_KEY`:不在内置弱密钥黑名单且长度 ≥32
-- 检查 `HALF_ADMIN_PASSWORD`:不在弱口令黑名单且长度 ≥8(建议大小写+数字)
-- `HALF_STRICT_SECURITY=true` 时,违规直接 `SystemExit(1)`;否则记录 ERROR 级警告但允许启动(避免破坏现有 dev 环境)
+- 检查 `HALF_ADMIN_PASSWORD`:满足统一密码强度规则（至少 8 位，包含大小写字母和数字），且不在弱口令黑名单
+- 默认 `HALF_STRICT_SECURITY=true` 时,违规直接 `SystemExit(1)`；仅当显式设置 `HALF_STRICT_SECURITY=false` 时，才降级为 warning 并允许启动（不建议生产环境使用）
 - 由 `main.lifespan` 启动期调用,先于 `init_db`
 
 ### 8.2 CORS 收紧
 
-- `HALF_CORS_ORIGINS` 提供逗号分隔 allow-list 时,严格白名单 + `allow_credentials=True`
-- 未提供时,降级为通配 `*` 但 **强制** `allow_credentials=False`,封堵 `*+credentials` 的 CSRF 误用
+- `HALF_CORS_ORIGINS` 提供逗号分隔 allow-list，后端按该白名单配置 CORS，并启用 `allow_credentials=True`
+- 默认值为本地开发 origin（`http://localhost:5173,http://localhost:3000`）；生产环境应显式覆盖
 - `allow_methods` 显式列表(GET/POST/PUT/PATCH/DELETE/OPTIONS),`allow_headers` 仅 `Authorization`/`Content-Type`
 
 ### 8.3 Git URL 白名单(`services/git_service.validate_git_url`)
@@ -698,7 +698,7 @@ Plan import 同时接受 `str | dict` 两种 `plan_json`。
 - 对来源于流程模版的 task，`generate_task_prompt()` 通过 `task.plan_id -> ProjectPlan.source_path` 解析 `template:<template_id>`，再读取对应 `ProcessTemplate.required_inputs_json` 和项目 `template_inputs_json`。若存在声明字段对应的非空值，则在 `## 项目任务介绍` 之后、`## 执行前置步骤` 之前插入 `## 模版所需信息` 段，按模版声明顺序渲染 `- {label}: {value}`。未声明的多余 key 必须忽略；无法追溯模版、模版不存在、JSON 非法或所有值为空时整段省略。
 - `Project` 不新增 `process_template_id`。模版来源只通过计划记录的 `source_path = template:<template_id>` 追溯，避免在项目级别保存易过期的模版指针。
 
-### 8.13 Plan 页 0419 稳定性修正
+### 8.13 Plan 页稳定性修正
 
 - `routers.plans.plan_generate_prompt()` 在创建新候选计划前先查找可复用的 pending plan。可复用条件为：同项目、`plan_type="candidate"`、`status="pending"`、`dispatched_at IS NULL`、`detected_at IS NULL`、`plan_json IS NULL`、`is_selected = false`。若存在多条符合条件的记录，复用 `id` 最大的一条。
 - 复用 pending plan 时，`source_path` 必须优先使用已有 `plan.source_path`；仅旧值为空时才按 `_plan_file_path(project, plan.id)` 回填。这样同一 pending 周期内重复生成 Prompt、调整 Agent/模型或项目协作目录变化，都不会改变外部 Agent 已收到的 `plan-<id>.json` 输出路径。

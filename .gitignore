@@ -23,6 +23,8 @@ Thumbs.db
 .env
 src/.env
 src/docker-compose.override.yml
+src/backend/half.db
+src/backend/repos/
 
 # Optional local-only operator notes
 /LOCAL.md

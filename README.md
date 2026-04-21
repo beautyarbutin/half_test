@@ -49,8 +49,9 @@ before the first `docker compose up`.
 ```bash
 cd src
 cp .env.example .env
-echo "HALF_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> .env
-echo "HALF_ADMIN_PASSWORD=<your-strong-password>" >> .env
+# Edit .env and set:
+# HALF_SECRET_KEY=<generated-secret>
+# HALF_ADMIN_PASSWORD=<your-strong-password>
 docker compose up -d
 ```
 
@@ -77,8 +78,8 @@ npm install
 npm run dev
 ```
 
-`VITE_API_BASE_URL` is mainly relevant for direct Vite development. In the
-production Docker image, the frontend talks to the backend via `/api`.
+The frontend uses relative `/api` requests. In local development, Vite proxies
+`/api` to the backend; in the production Docker image, nginx proxies `/api`.
 
 ## Testing
 
