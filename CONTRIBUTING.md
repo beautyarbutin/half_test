@@ -7,7 +7,7 @@ developer. Keep changes small and discuss larger ideas in an issue first.
 
 1. Search existing issues and pull requests.
 2. For non-trivial changes, open an issue before sending a PR.
-3. Read [`docs/prd_final.md`](./docs/prd_final.md) and
+3. Read [`docs/prd.md`](./docs/prd.md) and
    [`docs/tech_spec.md`](./docs/tech_spec.md) before larger refactors.
 
 ## Development Setup

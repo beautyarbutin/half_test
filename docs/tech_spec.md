@@ -1,7 +1,7 @@
 # HALF MVP 技术实现规格
 
 **适用范围：** v0.x early open-source MVP
-**配套文档：** `prd_final.md`（需求文档）
+**配套文档：** `prd.md`（需求文档）
 
 ---
 
