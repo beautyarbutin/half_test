@@ -406,7 +406,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="HALF Backend", version="1.0.0", lifespan=lifespan)
 
-_cors_origins_raw = (settings.CORS_ALLOW_ORIGINS or "").strip()
+_cors_origins_raw = (settings.CORS_ORIGINS or "").strip()
 if _cors_origins_raw:
     _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
     _cors_credentials = True

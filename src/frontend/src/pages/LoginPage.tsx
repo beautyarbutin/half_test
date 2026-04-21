@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { api, extractApiErrorDetail } from '../api/client';
 import { setStoredSession } from '../auth';
 
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 function validatePassword(pw: string): string | null {
-  if (pw.length < 6) return '密码至少需要6位';
+  if (pw.length < 8) return '密码至少需要8位';
   if (!/[a-z]/.test(pw)) return '密码需要包含小写字母';
   if (!/[A-Z]/.test(pw)) return '密码需要包含大写字母';
   if (!/\d/.test(pw)) return '密码需要包含数字';
+  if (!PASSWORD_REGEX.test(pw)) return '密码必须至少8位，且包含大写字母、小写字母和数字';
   return null;
 }
 
@@ -135,7 +136,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={isRegister ? '大小写字母 + 数字，至少6位' : '请输入密码'}
+              placeholder={isRegister ? '大小写字母 + 数字，至少8位' : '请输入密码'}
               autoComplete={isRegister ? 'new-password' : 'current-password'}
             />
             {pwHint && <div className="field-hint">{pwHint}</div>}

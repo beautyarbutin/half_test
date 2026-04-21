@@ -1,0 +1,22 @@
+# docker-compose.override.yml.example
+#
+# Optional overrides for local / dev use. Copy this file to
+# docker-compose.override.yml (git-ignored) and edit as needed.
+#
+# USE WITH CAUTION: the mounts below grant the backend container access
+# to host filesystem paths. Only enable them if you understand the
+# implications and trust the code you are running.
+
+services:
+  backend:
+    volumes:
+      # Mount a dedicated SSH deploy key (NOT your whole ~/.ssh directory).
+      # Create a key just for HALF: `ssh-keygen -t ed25519 -f ~/.ssh/half_deploy_key`
+      # and add the public key to the relevant git remote as a deploy key.
+      # - ${HOME}/.ssh/half_deploy_key:/root/.ssh/id_ed25519:ro
+      # - ${HOME}/.ssh/half_deploy_key.pub:/root/.ssh/id_ed25519.pub:ro
+      # - ${HOME}/.ssh/known_hosts:/root/.ssh/known_hosts:ro
+
+      # Mount a specific workspace directory (NOT the parent of HALF itself).
+      # HALF_WORKSPACE_ROOT must point at the container-side path.
+      # - ${HALF_HOST_WORKSPACE}:/workspace

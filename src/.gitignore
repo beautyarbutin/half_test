@@ -3,5 +3,7 @@ backend/__pycache__/
 backend/routers/__pycache__/
 backend/services/__pycache__/
 backend/half.db
+docker-compose.override.yml
+.env
 frontend/node_modules/
 frontend/dist/

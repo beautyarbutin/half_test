@@ -4,8 +4,8 @@ import { api, extractApiErrorDetail } from '../api/client';
 import { clearStoredSession, getStoredUsername, isAdminUser, setStoredCurrentUser } from '../auth';
 import { CurrentUser } from '../types';
 
-// Keep this in sync with backend PASSWORD_PATTERN in src/backend/routers/auth.py.
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
+// Keep this in sync with backend _PASSWORD_PATTERN in src/backend/config.py.
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 interface ChangePasswordModalProps {
   open: boolean;
@@ -58,7 +58,7 @@ function ChangePasswordModal({ open, onClose }: ChangePasswordModalProps) {
       return;
     }
     if (!PASSWORD_REGEX.test(newPassword)) {
-      setError('新密码必须至少6位，且包含大写字母、小写字母和数字');
+      setError('新密码必须至少8位，且包含大写字母、小写字母和数字');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -113,7 +113,7 @@ function ChangePasswordModal({ open, onClose }: ChangePasswordModalProps) {
               type="password"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
-              placeholder="大小写字母 + 数字，至少6位"
+              placeholder="大小写字母 + 数字，至少8位"
               autoComplete="new-password"
               disabled={saving}
             />

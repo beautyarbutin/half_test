@@ -21,20 +21,46 @@ A task management platform for orchestrating multi-agent collaboration. Designed
 
 ## Quick Start
 
-```bash
-docker compose up --build -d
-```
+HALF requires a strong admin password and secret key before it will start.
 
-Access the application at `http://localhost:3000`.
+1. Copy the example environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Generate a strong `HALF_SECRET_KEY` and set a strong `HALF_ADMIN_PASSWORD`:
+
+   ```bash
+   echo "HALF_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> .env
+   echo "HALF_ADMIN_PASSWORD=<your-strong-password>" >> .env
+   ```
+
+   The admin password must be at least 8 characters and contain uppercase,
+   lowercase, and digits. Never use `admin`, `example-insecure-password-placeholder`, `password`, etc.
+
+3. Start the stack:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. Open `http://localhost:3000` and log in with the username `admin` and the
+   password you set in step 2.
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HALF_ADMIN_PASSWORD` | `example-insecure-password-placeholder` | Default admin password |
-| `HALF_SECRET_KEY` | (built-in) | JWT signing key |
+See [`.env.example`](./.env.example) for the full list. The required ones are
+`HALF_ADMIN_PASSWORD` and `HALF_SECRET_KEY`; the stack will refuse to start
+without them.
 
-> Change the default password and secret key before exposing to any network.
+### Git Access From The Container
+
+Out of the box, the backend container cannot reach private git repositories,
+because HALF does not mount host SSH keys by default. If you need private
+repo access, copy [`docker-compose.override.yml.example`](./docker-compose.override.yml.example)
+to `docker-compose.override.yml` and mount **a dedicated deploy key** rather
+than your entire `~/.ssh` directory.
 
 ## License
 

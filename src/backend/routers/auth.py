@@ -1,4 +1,3 @@
-import re
 import json
 from datetime import datetime, timezone
 
@@ -8,21 +7,19 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import AuditLog, User
-from config import settings as app_settings
+from config import settings as app_settings, validate_user_password
 from auth import verify_password, hash_password, create_token, get_current_user
 from middleware.rate_limit import login_limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-PASSWORD_PATTERN = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$')
-
-
 def validate_password_strength(password: str) -> str:
-    if not PASSWORD_PATTERN.match(password):
+    try:
+        return validate_user_password(password)
+    except ValueError as exc:
         raise ValueError(
-            "密码必须至少6位，且包含大写字母、小写字母和数字"
-        )
-    return password
+            "密码必须至少8位，且包含大写字母、小写字母和数字"
+        ) from exc
 
 
 def _extract_client_ip(request: Request | None) -> str | None:

@@ -36,11 +36,11 @@ class Settings:
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
     POLL_INTERVAL_SECONDS: int = 45
-    CORS_ALLOW_ORIGINS: str = os.getenv("HALF_CORS_ORIGINS", "")
     STRICT_SECURITY: bool = _truthy(os.getenv("HALF_STRICT_SECURITY", "false"))
+    CORS_ORIGINS: str = os.getenv("HALF_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
     ALLOWED_CORS_ORIGINS: list[str] = [
         o.strip()
-        for o in os.getenv("HALF_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+        for o in CORS_ORIGINS.split(",")
         if o.strip()
     ]
 
@@ -82,3 +82,13 @@ def validate_security_config() -> None:
         sys.stderr.write(message + "\n")
         raise SystemExit(1)
     logger.warning(message)
+
+
+def validate_user_password(password: str) -> str:
+    """Validate a user-set password against the project's unified strength rule."""
+    if not _PASSWORD_PATTERN.match(password or ""):
+        raise ValueError(
+            "Password must be at least 8 characters and contain uppercase, "
+            "lowercase, and digits."
+        )
+    return password
