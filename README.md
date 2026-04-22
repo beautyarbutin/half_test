@@ -1,7 +1,7 @@
 # HALF — Human-AI Loop Framework
 
 A task management console for teams orchestrating multiple AI coding agents
-(Claude Code, Codex, Cursor, Windsurf) across git-based workflows.
+(Claude Code, Codex, Copilot, GLM, Kimi, etc.) across git-based workflows.
 
 > ⚠️ **v0.x / early open source.** Interfaces and data model may change between
 > minor versions. Not recommended for production multi-tenant use.
