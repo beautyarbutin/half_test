@@ -19,6 +19,13 @@ updates:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
+      # Major upgrades are human-initiated. Auto-PRs cover patch and minor only.
+      # Security updates (CVE-triggered) bypass this ignore rule by design.
+      # Caveat: Dependabot classifies "0.4 -> 0.5" as semver-minor; pre-1.0
+      # packages may still introduce breaking changes in such bumps. Add a
+      # per-dependency rule here if a specific 0.x package proves unstable.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/src/frontend"
@@ -30,6 +37,14 @@ updates:
     labels:
       - "dependencies"
       - "area:frontend"
+    ignore:
+      # Major upgrades are human-initiated. Auto-PRs cover patch and minor only.
+      # Security updates (CVE-triggered) bypass this ignore rule by design.
+      # Caveat: Dependabot classifies "0.4 -> 0.5" as semver-minor; pre-1.0
+      # packages may still introduce breaking changes in such bumps. Add a
+      # per-dependency rule here if a specific 0.x package proves unstable.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/src/backend"
@@ -41,6 +56,16 @@ updates:
     labels:
       - "dependencies"
       - "area:backend"
+    ignore:
+      # Base image bumps at FROM-line granularity require manual compatibility
+      # verification regardless of semver level. Dependabot classifies
+      # "python:3.12 -> 3.14" as minor (first digit unchanged), so both major
+      # and minor must be filtered for base images. Patch-level tag changes
+      # still flow through.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "docker"
     directory: "/src/frontend"
@@ -52,6 +77,16 @@ updates:
     labels:
       - "dependencies"
       - "area:frontend"
+    ignore:
+      # Base image bumps at FROM-line granularity are human-initiated. Both
+      # node 20 -> 25 (major, often non-LTS) and smaller jumps should be
+      # reviewed manually. Dependabot's semver-major alone is insufficient
+      # because future minor bumps on the same major track would otherwise
+      # auto-merge. Patch-level tag changes still flow through.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -63,3 +98,8 @@ updates:
     labels:
       - "dependencies"
       - "area:ci"
+    ignore:
+      # Action major upgrades are human-initiated (historically safe, but the
+      # policy is uniform across all ecosystems to reduce review surface).
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
