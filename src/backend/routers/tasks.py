@@ -226,26 +226,14 @@ def list_project_predecessor_status(project_id: int, refresh: bool = False, db: 
     _ = refresh
     tasks = db.query(Task).filter(Task.project_id == project_id).all()
 
-    # 批量优化：原实现对每个任务都重新查 Project、重新查依赖任务，并对每个
-    # missing 路径单独调用 git_service.file_exists。任务量稍多时会出现明显的
-    # N+1 数据库查询和重复 git 操作。虽然当前任务页面已不再依赖本接口参与派发
-    # 流程，但保留为诊断接口时仍应保证其开销可控。
-    #
-    # 这里把循环里的开销集中到单次：
-    #   - Project 已在上面取过一次
-    #   - 用一次查询拿出本项目所有任务，构建 task_code -> Task 映射
-    #   - file_exists(path) 在本次请求范围内做结果缓存，重复路径不再二次访问 git
+    # The project detail page uses this batch endpoint to split pending tasks
+    # into ready vs blocked queues. For that UI decision, dependency status is
+    # authoritative: completed/abandoned predecessors unblock the task, while
+    # missing or unfinished predecessors keep it blocked. We intentionally do
+    # not check Git file existence here because demo and diagnostic projects may
+    # carry result_file_path metadata without requiring a public committed file.
     collab = (project.collaboration_dir or "").strip("/")
     code_to_task: dict[str, Task] = {t.task_code: t for t in tasks if t.task_code}
-
-    file_exists_cache: dict[str, bool] = {}
-
-    def _file_exists_cached(path: str) -> bool:
-        if path in file_exists_cache:
-            return file_exists_cache[path]
-        ok = git_service.file_exists(project.id, path, git_repo_url=project.git_repo_url)
-        file_exists_cache[path] = ok
-        return ok
 
     results: list[PredecessorStatusResponse] = []
     for task in tasks:
@@ -263,10 +251,17 @@ def list_project_predecessor_status(project_id: int, refresh: bool = False, db: 
             if p.status == "abandoned":
                 continue
             if p.status != "completed":
+                missing.append(
+                    MissingPredecessor(
+                        task_code=p.task_code,
+                        task_name=p.task_name,
+                        expected_path=p.result_file_path or p.expected_output_path or "",
+                    )
+                )
                 continue
             try:
-                path = p.result_file_path or normalize_expected_output_path(
-                    p.expected_output_path,
+                normalize_expected_output_path(
+                    p.result_file_path or p.expected_output_path,
                     default_path=f"outputs/{p.task_code}/result.json",
                     collaboration_dir=collab,
                     strict=True,
@@ -274,11 +269,6 @@ def list_project_predecessor_status(project_id: int, refresh: bool = False, db: 
             except ExpectedOutputPathError:
                 missing.append(
                     MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path="(invalid expected_output_path)")
-                )
-                continue
-            if not _file_exists_cached(path):
-                missing.append(
-                    MissingPredecessor(task_code=p.task_code, task_name=p.task_name, expected_path=path)
                 )
 
         results.append(

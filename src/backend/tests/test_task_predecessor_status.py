@@ -18,6 +18,7 @@ from routers.tasks import (
     TaskDispatchRequest,
     _compute_predecessor_status,
     dispatch_task,
+    list_project_predecessor_status,
     mark_complete,
     redispatch_task,
 )
@@ -81,6 +82,87 @@ class TaskPredecessorStatusTests(unittest.TestCase):
             result = _compute_predecessor_status(self.db, task, refresh=False)
         self.assertTrue(result.ready)
         self.assertEqual(result.missing, [])
+
+    def test_project_predecessor_status_marks_dependency_chain_ready_and_blocked(self):
+        project = Project(
+            id=10,
+            name="Demo chain",
+            git_repo_url="https://github.com/example/demo.git",
+            collaboration_dir="demo/outputs",
+            status="executing",
+            created_by=self.user.id,
+        )
+        plan = ProjectPlan(id=10, project_id=10, status="final")
+        tasks = [
+            Task(
+                id=10,
+                project_id=10,
+                plan_id=10,
+                task_code="T1_DEV",
+                task_name="开发",
+                status="completed",
+                depends_on_json="[]",
+                result_file_path="demo/outputs/T1_DEV/result.json",
+                completed_at=datetime.now(timezone.utc),
+            ),
+            Task(
+                id=11,
+                project_id=10,
+                plan_id=10,
+                task_code="T2_TEST",
+                task_name="测试",
+                status="pending",
+                depends_on_json='["T1_DEV"]',
+                expected_output_path="demo/outputs/T2_TEST/result.json",
+            ),
+            Task(
+                id=12,
+                project_id=10,
+                plan_id=10,
+                task_code="T3_REVIEW",
+                task_name="审查",
+                status="pending",
+                depends_on_json='["T1_DEV"]',
+                expected_output_path="demo/outputs/T3_REVIEW/result.json",
+            ),
+            Task(
+                id=13,
+                project_id=10,
+                plan_id=10,
+                task_code="T4_EVAL",
+                task_name="评估",
+                status="pending",
+                depends_on_json='["T2_TEST", "T3_REVIEW"]',
+                expected_output_path="demo/outputs/T4_EVAL/result.json",
+            ),
+            Task(
+                id=14,
+                project_id=10,
+                plan_id=10,
+                task_code="T5_SYNC",
+                task_name="同步",
+                status="pending",
+                depends_on_json='["T4_EVAL"]',
+                expected_output_path="demo/outputs/T5_SYNC/result.json",
+            ),
+        ]
+        self.db.add(project)
+        self.db.add(plan)
+        self.db.add_all(tasks)
+        self.db.commit()
+
+        with patch("routers.tasks.git_service.file_exists") as mock_file_exists:
+            statuses = list_project_predecessor_status(10, db=self.db, user=self.user)
+
+        mock_file_exists.assert_not_called()
+        by_task_id = {status.task_id: status for status in statuses}
+        self.assertTrue(by_task_id[10].ready)
+        self.assertTrue(by_task_id[11].ready)
+        self.assertTrue(by_task_id[12].ready)
+        self.assertFalse(by_task_id[13].ready)
+        self.assertEqual([item.task_code for item in by_task_id[13].missing], ["T2_TEST", "T3_REVIEW"])
+        self.assertFalse(by_task_id[14].ready)
+        self.assertEqual([item.task_code for item in by_task_id[14].missing], ["T4_EVAL"])
 
     def test_dispatch_does_not_check_predecessor_files_on_server(self):
         # Server-side dispatch must NOT trigger git fetch/pull and must NOT
