@@ -126,7 +126,7 @@ DEMO_TEMPLATE_INPUTS = {
     "test_url": "https://demo.example.test",
     "test_name": "demo",
     "test_password": "DemoPass123",
-    "fianl_report": f"{DEMO_COLLABORATION_DIR}/final-report.md",
+    "final_report": f"{DEMO_COLLABORATION_DIR}/final-report.md",
     "prd": f"{DEMO_COLLABORATION_DIR}/prd.md",
     "tech_spec": f"{DEMO_COLLABORATION_DIR}/tech-spec.md",
 }
@@ -249,7 +249,7 @@ def _ensure_template(db: Session, admin: User) -> ProcessTemplate:
             {"key": "test_url", "label": "测试系统URL", "required": True, "sensitive": False},
             {"key": "test_name", "label": "测试系统用户名", "required": True, "sensitive": False},
             {"key": "test_password", "label": "测试系统密码", "required": True, "sensitive": False},
-            {"key": "fianl_report", "label": "本次修改的最终报告", "required": False, "sensitive": False},
+            {"key": "final_report", "label": "本次修改的最终报告", "required": False, "sensitive": False},
             {"key": "prd", "label": "系统需求文档", "required": False, "sensitive": False},
             {"key": "tech_spec", "label": "系统技术规格书", "required": False, "sensitive": False},
         ],
@@ -354,7 +354,7 @@ def seed_demo_project(db: Session, admin: User) -> bool:
             status=task_spec["status"],
             depends_on_json=json.dumps(task_spec["depends_on"], ensure_ascii=False),
             expected_output_path=f"{DEMO_COLLABORATION_DIR}/outputs/{task_code}/result.json",
-            result_file_path=f"{DEMO_COLLABORATION_DIR}/{task_code}/result.json" if completed else None,
+            result_file_path=f"{DEMO_COLLABORATION_DIR}/outputs/{task_code}/result.json" if completed else None,
             timeout_minutes=11,
             dispatched_at=now - timedelta(minutes=5) if completed else None,
             completed_at=now - timedelta(minutes=1) if completed else None,
@@ -370,7 +370,7 @@ def seed_demo_project(db: Session, admin: User) -> bool:
                     "summary": "Demo task completed. No real bug fix was required; generated task artifacts for downstream workflow consumption.",
                     "artifacts": [
                         {
-                            "path": f"{DEMO_COLLABORATION_DIR}/{task_code}/report.md",
+                            "path": f"{DEMO_COLLABORATION_DIR}/outputs/{task_code}/report.md",
                             "type": "report",
                             "description": "Development and local deployment verification report for the demo workflow task.",
                         }

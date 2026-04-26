@@ -58,7 +58,7 @@ class DemoSeedTests(unittest.TestCase):
         }
         self.assertEqual(set(tasks), {"T1_DEV", "T2_TEST", "T3_REVIEW", "T4_EVAL", "T5_SYNC"})
         self.assertEqual(tasks["T1_DEV"].status, "completed")
-        self.assertEqual(tasks["T1_DEV"].result_file_path, "demo/half-demo-collaboration/T1_DEV/result.json")
+        self.assertEqual(tasks["T1_DEV"].result_file_path, "demo/half-demo-collaboration/outputs/T1_DEV/result.json")
         self.assertEqual(json.loads(tasks["T2_TEST"].depends_on_json), ["T1_DEV"])
         self.assertEqual(json.loads(tasks["T3_REVIEW"].depends_on_json), ["T1_DEV"])
         self.assertEqual(json.loads(tasks["T4_EVAL"].depends_on_json), ["T2_TEST", "T3_REVIEW"])
