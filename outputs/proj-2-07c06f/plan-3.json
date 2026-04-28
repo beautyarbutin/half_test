@@ -1,0 +1,43 @@
+{
+  "plan_name": "test1 halfv0.2 frontend test page delivery plan",
+  "tasks": [
+    {
+      "task_code": "T1",
+      "task_name": "Confirm frontend entry point",
+      "description": "Inspect the repository frontend structure, identify the page or route to modify, and confirm the simplest implementation path for displaying \"\\u7528\\u4e8ehalfv0.2\\u7684\\u6d4b\\u8bd5\".",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [],
+      "expected_output": "A clear implementation target, including the frontend framework, entry file, and route or page that will render the test text."
+    },
+    {
+      "task_code": "T2",
+      "task_name": "Implement test page",
+      "description": "Add or update the frontend page so the browser displays \"\\u7528\\u4e8ehalfv0.2\\u7684\\u6d4b\\u8bd5\" as the primary visible content, following the existing project style and avoiding unrelated code changes.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T1"
+      ],
+      "expected_output": "Frontend source changes that render the required text on the target page."
+    },
+    {
+      "task_code": "T3",
+      "task_name": "Build and local verification",
+      "description": "Run the project frontend build or equivalent validation command on the same server, then verify the page renders the required text locally.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T2"
+      ],
+      "expected_output": "Successful build or documented validation result, with confirmation that the page shows \"\\u7528\\u4e8ehalfv0.2\\u7684\\u6d4b\\u8bd5\"."
+    },
+    {
+      "task_code": "T4",
+      "task_name": "Commit and push delivery",
+      "description": "Stage only the project output files under outputs/proj-2-07c06f, create a focused commit, and push the result to https://github.com/beautyarbutin/half_test.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T3"
+      ],
+      "expected_output": "A pushed commit in the target repository containing the completed deliverable."
+    }
+  ]
+}
