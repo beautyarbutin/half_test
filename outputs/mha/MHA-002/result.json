@@ -1,0 +1,24 @@
+{
+  "task_code": "MHA-002",
+  "summary": "已实现不使用 einops 的 PyTorch 多头自注意力示例，覆盖 Q/K/V 线性映射、原生 reshape/transpose/contiguous 拆头与合头、缩放点积注意力、布尔 mask、softmax、dropout、输出投影、形状打印和断言校验。",
+  "artifacts": [
+    {
+      "path": "outputs/mha/MHA-002/mha_no_einops.py",
+      "description": "不依赖 einops 的 MultiHeadSelfAttention 示例脚本，可直接运行并打印关键张量形状。"
+    }
+  ],
+  "predecessors": [
+    {
+      "task_code": "MHA-001",
+      "path": "outputs/mha/MHA-001/result.json",
+      "used": true
+    }
+  ],
+  "verification": {
+    "syntax_command": "python -m py_compile outputs/mha/MHA-002/mha_no_einops.py",
+    "syntax_status": "passed",
+    "demo_command": "python outputs/mha/MHA-002/mha_no_einops.py",
+    "demo_status": "blocked_missing_dependency",
+    "note": "当前 Python 3.12.10 环境未安装 torch；脚本已提供缺失依赖提示，安装 PyTorch 后可直接运行 demo。"
+  }
+}
