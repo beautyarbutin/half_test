@@ -1,0 +1,54 @@
+{
+  "task_code": "MHA-001",
+  "implementation_scope": {
+    "attention_type": "self_attention",
+    "framework": "pytorch",
+    "include_scaled_dot_product_attention": true,
+    "include_optional_mask": true,
+    "mask_semantics": "boolean mask, True means visible and False means masked",
+    "include_forward_demo": true,
+    "return_attention_weights": true
+  },
+  "shape_conventions": {
+    "input_x": "(batch_size, seq_len, embed_dim)",
+    "split_heads": "(batch_size, num_heads, seq_len, head_dim)",
+    "attention_scores": "(batch_size, num_heads, query_len, key_len)",
+    "attention_weights": "(batch_size, num_heads, query_len, key_len)",
+    "output": "(batch_size, seq_len, embed_dim)",
+    "head_dim_rule": "head_dim = embed_dim // num_heads, and embed_dim must be divisible by num_heads"
+  },
+  "planned_artifacts": [
+    {
+      "task_code": "MHA-002",
+      "path": "outputs/mha/MHA-002/mha_no_einops.py",
+      "description": "PyTorch 原生张量变换版多头注意力示例"
+    },
+    {
+      "task_code": "MHA-003",
+      "path": "outputs/mha/MHA-003/mha_with_einops.py",
+      "description": "einops.rearrange 版多头注意力示例"
+    },
+    {
+      "task_code": "MHA-004",
+      "path": "outputs/mha/MHA-004/README.md",
+      "description": "依赖安装、运行命令、张量形状和两版差异说明"
+    }
+  ],
+  "demo_defaults": {
+    "batch_size": 2,
+    "seq_len": 4,
+    "embed_dim": 8,
+    "num_heads": 2,
+    "dropout": 0.0,
+    "random_seed": 0
+  },
+  "dependencies": {
+    "python": ">=3.9",
+    "common": [
+      "torch"
+    ],
+    "einops_version_only": [
+      "einops"
+    ]
+  }
+}

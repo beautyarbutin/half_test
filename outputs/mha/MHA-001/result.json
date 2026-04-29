@@ -1,0 +1,20 @@
+{
+  "task_code": "MHA-001",
+  "summary": "已确认 Python 多头注意力示例的目标读者、两版实现范围、张量形状约定、mask 语义、缩放点积注意力流程、前向 demo 要求、最小依赖和后续输出文件组织。",
+  "artifacts": [
+    {
+      "path": "outputs/mha/MHA-001/scope.md",
+      "description": "多头注意力示例范围、形状约定、mask 约定、依赖和后续文件组织说明。"
+    },
+    {
+      "path": "outputs/mha/MHA-001/output_structure.json",
+      "description": "结构化记录实现范围、张量形状、计划产物、demo 默认参数和依赖。"
+    }
+  ],
+  "predecessors": {
+    "required": false,
+    "checked": true,
+    "note": "MHA-001 无前序任务输出。"
+  },
+  "next_tasks_should_read": "outputs/mha/MHA-001/result.json"
+}
