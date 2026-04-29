@@ -1,0 +1,53 @@
+{
+  "plan_name": "test4 tst balanced execution plan",
+  "tasks": [
+    {
+      "task_code": "T1",
+      "task_name": "Clarify tst delivery scope",
+      "description": "Confirm the intended meaning of the task goal \"tst\" from the project context, existing repository state, and collaboration directory. Because only one participating agent is available, keep the scope narrow and define the smallest acceptable deliverable before implementation.",
+      "assignee": "Codex Pro (codex-pro, chatgpt-pro)",
+      "depends_on": [],
+      "expected_output": "A concise scope definition for \"tst\", including the expected artifact, affected area, and acceptance criteria."
+    },
+    {
+      "task_code": "T2",
+      "task_name": "Inspect local repository context",
+      "description": "Read the relevant local files, existing outputs, configuration, and test/build scripts to identify the correct implementation path. This task should be handled by the same-server agent because it depends on direct local workspace access.",
+      "assignee": "Codex Pro (codex-pro, chatgpt-pro)",
+      "depends_on": [
+        "T1"
+      ],
+      "expected_output": "A short implementation map listing the files, commands, constraints, and any risks discovered in the local repository."
+    },
+    {
+      "task_code": "T3",
+      "task_name": "Implement focused tst changes",
+      "description": "Make the smallest code, configuration, documentation, or output-artifact changes required by the clarified \"tst\" scope. Follow existing project conventions and avoid unrelated refactors or broad review chains.",
+      "assignee": "Codex Pro (codex-pro, chatgpt-pro)",
+      "depends_on": [
+        "T2"
+      ],
+      "expected_output": "Focused changes that satisfy the accepted \"tst\" deliverable without touching unrelated project areas."
+    },
+    {
+      "task_code": "T4",
+      "task_name": "Validate on the same server",
+      "description": "Run the relevant local validation commands, such as tests, build, lint, smoke checks, or artifact verification. This task should be handled by the same-server agent because validation may depend on local runtime state and files.",
+      "assignee": "Codex Pro (codex-pro, chatgpt-pro)",
+      "depends_on": [
+        "T3"
+      ],
+      "expected_output": "Validation evidence with commands run, pass/fail results, and any documented limitation if a check cannot be completed."
+    },
+    {
+      "task_code": "T5",
+      "task_name": "Commit and push to main",
+      "description": "Stage only the files required for this deliverable, create a focused commit, and push the result to the main branch of https://github.com/beautyarbutin/half_test.",
+      "assignee": "Codex Pro (codex-pro, chatgpt-pro)",
+      "depends_on": [
+        "T4"
+      ],
+      "expected_output": "A pushed commit on half_test/main containing outputs/proj-5-e68445/plan-7.json and any approved deliverable files."
+    }
+  ]
+}
