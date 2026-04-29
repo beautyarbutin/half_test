@@ -1,0 +1,53 @@
+{
+  "plan_name": "test4 tst balanced delivery plan",
+  "tasks": [
+    {
+      "task_code": "T1",
+      "task_name": "Confirm scope and acceptance criteria",
+      "description": "Review the project context for task target \"tst\", identify whether it maps to an existing test, feature, or validation workflow, and record a minimal acceptance target before implementation begins.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [],
+      "expected_output": "A concise scope note that defines the intended deliverable for \"tst\" and the checks required to accept it."
+    },
+    {
+      "task_code": "T2",
+      "task_name": "Inspect repository impact area",
+      "description": "Inspect the codebase, configuration, and existing outputs to locate the files or modules most likely affected by the confirmed \"tst\" deliverable. This task benefits from same-server access because it requires local repository reads.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T1"
+      ],
+      "expected_output": "A short implementation map listing the relevant files, commands, and any constraints found in the local workspace."
+    },
+    {
+      "task_code": "T3",
+      "task_name": "Implement minimal deliverable",
+      "description": "Apply the smallest code, configuration, or artifact change needed to satisfy the confirmed \"tst\" scope, following existing repository patterns and avoiding unrelated edits.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T2"
+      ],
+      "expected_output": "Focused repository changes that implement the accepted \"tst\" deliverable."
+    },
+    {
+      "task_code": "T4",
+      "task_name": "Run same-server validation",
+      "description": "Run the relevant local tests, build, lint, or smoke checks for the changed area. This task should be executed by the same-server agent because it may require local runtime files and workspace state.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T3"
+      ],
+      "expected_output": "Validation results showing pass/fail status, commands used, and any residual risk if a check cannot be run."
+    },
+    {
+      "task_code": "T5",
+      "task_name": "Package and publish results",
+      "description": "Stage only the files belonging to this project output or the confirmed deliverable, create a focused commit, and push it to https://github.com/beautyarbutin/half_test.",
+      "assignee": "Codex Pro (codex-pro)",
+      "depends_on": [
+        "T4"
+      ],
+      "expected_output": "A pushed commit containing the completed plan and any approved deliverable files."
+    }
+  ]
+}
