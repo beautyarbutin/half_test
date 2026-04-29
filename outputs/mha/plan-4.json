@@ -1,0 +1,55 @@
+{
+  "plan_name": "Python Multi-Head Attention 示例实现计划",
+  "tasks": [
+    {
+      "task_code": "MHA-001",
+      "task_name": "确认示例代码范围与输出结构",
+      "description": "明确多头注意力机制示例的目标读者、输入输出张量形状、是否包含掩码、缩放点积注意力、前向运行示例和最小依赖说明。确定协作目录 outputs/mha 下的文件命名与说明文档组织方式。",
+      "assignee": "Codex Pro",
+      "depends_on": [],
+      "expected_output": "形成清晰的实现约束，包括不使用 einops 的版本、使用 einops 的版本、示例运行入口和 README 说明结构。"
+    },
+    {
+      "task_code": "MHA-002",
+      "task_name": "实现不使用 einops 的多头注意力示例",
+      "description": "使用 PyTorch 原生 reshape、transpose、contiguous 等张量操作实现 MultiHeadAttention 示例，覆盖 Q/K/V 线性映射、多头拆分、attention score 计算、mask 处理、softmax、dropout、头拼接和输出投影。代码应包含可直接运行的 demo，打印关键张量形状并验证输出形状。",
+      "assignee": "Codex Pro",
+      "depends_on": [
+        "MHA-001"
+      ],
+      "expected_output": "outputs/mha/mha_no_einops.py，可独立运行并展示多头注意力前向计算流程。"
+    },
+    {
+      "task_code": "MHA-003",
+      "task_name": "实现使用 einops 的多头注意力示例",
+      "description": "使用 einops.rearrange 重写多头拆分与头拼接逻辑，保持核心计算与非 einops 版本一致，便于对照学习。代码应保留形状注释、最小 demo 和输出形状校验。",
+      "assignee": "Codex Pro",
+      "depends_on": [
+        "MHA-001",
+        "MHA-002"
+      ],
+      "expected_output": "outputs/mha/mha_with_einops.py，可独立运行并突出 einops 写法相较原生张量变换的可读性。"
+    },
+    {
+      "task_code": "MHA-004",
+      "task_name": "补充说明文档与运行指引",
+      "description": "在 outputs/mha 下补充 README，说明两个版本的依赖安装、运行命令、主要张量形状约定、两版实现差异，以及常见参数如 batch_size、seq_len、embed_dim、num_heads 的含义。",
+      "assignee": "Codex Pro",
+      "depends_on": [
+        "MHA-002",
+        "MHA-003"
+      ],
+      "expected_output": "outputs/mha/README.md，帮助用户快速理解并运行两个 MHA 示例。"
+    },
+    {
+      "task_code": "MHA-005",
+      "task_name": "本地验证与交付",
+      "description": "在同服务器环境中运行两个 Python 示例，确认依赖提示清晰、输出形状正确、无语法错误；随后整理 git diff，提交并推送协作目录内的变更。",
+      "assignee": "Codex Pro",
+      "depends_on": [
+        "MHA-004"
+      ],
+      "expected_output": "两个示例脚本均通过本地运行验证，相关文件完成 git add、git commit、git push。"
+    }
+  ]
+}
