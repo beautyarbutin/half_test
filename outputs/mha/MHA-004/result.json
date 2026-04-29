@@ -1,0 +1,27 @@
+{
+  "task_code": "MHA-004",
+  "summary": "已补充多头注意力示例 README，说明非 einops 与 einops 两个版本的依赖安装、运行命令、主要张量形状、mask 语义、实现差异和常见参数含义。",
+  "artifacts": [
+    {
+      "path": "outputs/mha/MHA-004/README.md",
+      "description": "多头注意力两个示例版本的统一说明文档与运行指引。"
+    }
+  ],
+  "predecessors": [
+    {
+      "task_code": "MHA-002",
+      "path": "outputs/mha/MHA-002/result.json",
+      "used": true
+    },
+    {
+      "task_code": "MHA-003",
+      "path": "outputs/mha/MHA-003/result.json",
+      "used": true
+    }
+  ],
+  "verification": {
+    "json_command": "Get-Content outputs/mha/MHA-004/result.json.tmp -Raw -Encoding UTF8 | ConvertFrom-Json",
+    "json_status": "passed",
+    "manual_review": "README covers dependency installation, run commands, tensor shapes, implementation differences, and common parameter meanings."
+  }
+}
