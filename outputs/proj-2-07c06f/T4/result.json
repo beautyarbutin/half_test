@@ -1,0 +1,7 @@
+{
+  "task_code": "T4",
+  "summary": "Final delivery recorded. The plan, T1, T2, and T3 results have already been pushed to the target repository, and this task adds the final T4 delivery summary under outputs/proj-2-07c06f/T4/.",
+  "artifacts": [
+    "outputs/proj-2-07c06f/T4/delivery-summary.md"
+  ]
+}
