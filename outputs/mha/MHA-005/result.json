@@ -1,0 +1,31 @@
+{
+  "task_code": "MHA-005",
+  "summary": "已在同服务器环境完成两个 Python 多头注意力示例的本地验证；安装 torch 与 einops 后，非 einops 版本和 einops 版本均通过语法编译、前向运行、输出形状断言和 mask 断言。已整理本次交付 git diff 范围。",
+  "artifacts": [
+    {
+      "path": "outputs/mha/MHA-005/validation_report.md",
+      "description": "本地验证与交付报告，记录依赖安装、验证命令、两个示例的输出形状、断言结果和 git diff 范围。"
+    }
+  ],
+  "predecessors": [
+    {
+      "task_code": "MHA-004",
+      "path": "outputs/mha/MHA-004/result.json",
+      "used": true
+    }
+  ],
+  "verification": {
+    "python_version": "3.12.10",
+    "torch_version": "2.11.0+cpu",
+    "einops_version": "0.8.2",
+    "syntax_command": "python -m py_compile outputs/mha/MHA-002/mha_no_einops.py outputs/mha/MHA-003/mha_with_einops.py",
+    "syntax_status": "passed",
+    "no_einops_command": "python outputs/mha/MHA-002/mha_no_einops.py",
+    "no_einops_status": "passed",
+    "einops_command": "python outputs/mha/MHA-003/mha_with_einops.py",
+    "einops_status": "passed",
+    "shape_checks": "passed",
+    "mask_checks": "passed",
+    "warning": "PyTorch emitted a non-fatal NumPy initialization warning because numpy is not installed; the examples do not use NumPy and both scripts completed successfully."
+  }
+}
